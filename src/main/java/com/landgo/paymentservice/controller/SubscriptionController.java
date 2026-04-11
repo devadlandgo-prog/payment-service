@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1/subscriptions")
+@RequestMapping("/subscriptions")
 @RequiredArgsConstructor
 @Tag(name = "Subscription", description = "Subscription management APIs")
 public class SubscriptionController {

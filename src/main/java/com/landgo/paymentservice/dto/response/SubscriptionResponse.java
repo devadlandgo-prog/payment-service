@@ -15,6 +15,7 @@ public class SubscriptionResponse {
     private LocalDateTime startDate;
     private LocalDateTime endDate;
     private BigDecimal amount;
+    private String currency;
     private String paymentMethod;
     private boolean autoRenew;
     private boolean isActive;

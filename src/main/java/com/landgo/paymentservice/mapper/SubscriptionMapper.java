@@ -8,5 +8,6 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface SubscriptionMapper {
     @Mapping(target = "isActive", expression = "java(subscription.isActive())")
+    @Mapping(target = "currency", constant = "CAD")
     SubscriptionResponse toResponse(Subscription subscription);
 }

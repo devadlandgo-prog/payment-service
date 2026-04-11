@@ -15,14 +15,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1/payments")
+@RequestMapping("/payments")
 @RequiredArgsConstructor
 @Tag(name = "Payments", description = "Payment history APIs")
 public class PaymentController {
 
     private final PaymentService paymentService;
 
-    @GetMapping
+    @GetMapping("/my")
     @Operation(summary = "Get my payment history")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getMyPayments(
             @CurrentUser UserPrincipal userPrincipal, @PageableDefault(size = 20) Pageable pageable) {
