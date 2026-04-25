@@ -10,7 +10,9 @@
               "sql": "CREATE SCHEMA IF NOT EXISTS payments;"
             }
           }
-        ]
+        ],
+        "runOnChange": true,
+        "failOnError": false
       }
     },
     {
