@@ -42,3 +42,4 @@ management:
     web:
       exposure:
         include: health,info
+management.health.mail.enabled: false
