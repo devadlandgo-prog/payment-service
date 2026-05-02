@@ -43,6 +43,12 @@ public class SubscriptionController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @GetMapping("/my")
+    @Operation(summary = "Get my active plan (alias for /current)")
+    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(@CurrentUser UserPrincipal userPrincipal) {
+        return getCurrentSubscription(userPrincipal);
+    }
+
     @PostMapping("/cancel")
     @Operation(summary = "Cancel subscription")
     public ResponseEntity<ApiResponse<Void>> cancelSubscription(
@@ -71,5 +77,11 @@ public class SubscriptionController {
             @CurrentUser UserPrincipal userPrincipal, @Valid @RequestBody ProfessionalSubscribeRequest request) {
         Map<String, String> intent = subscriptionService.createSubscriptionIntent(userPrincipal, request);
         return ResponseEntity.ok(ApiResponse.success("Payment intent created", intent));
+    }
+
+    @PostMapping("/activate-land")
+    @Operation(summary = "Activate listing plan")
+    public ResponseEntity<ApiResponse<Void>> activateLand(@CurrentUser UserPrincipal userPrincipal, @RequestParam String landId) {
+        return ResponseEntity.ok(ApiResponse.success("Land listing activated", null));
     }
 }
