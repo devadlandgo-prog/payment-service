@@ -19,9 +19,12 @@ public class GlobalExceptionHandler {
     }
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
-        String msg = ex.getBindingResult().getFieldErrors().stream()
-                .map(e -> e.getField() + ": " + e.getDefaultMessage()).collect(Collectors.joining(", "));
-        return ResponseEntity.badRequest().body(ApiResponse.error(msg, "VALIDATION_ERROR"));
+        java.util.Map<String, java.util.List<String>> details = ex.getBindingResult().getFieldErrors().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        org.springframework.validation.FieldError::getField,
+                        java.util.stream.Collectors.mapping(org.springframework.validation.FieldError::getDefaultMessage, java.util.stream.Collectors.toList())
+                ));
+        return ResponseEntity.badRequest().body(ApiResponse.error("Validation failed", "VALIDATION_ERROR", details));
     }
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {

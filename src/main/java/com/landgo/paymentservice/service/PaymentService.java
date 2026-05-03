@@ -25,9 +25,9 @@ public class PaymentService {
     public PageResponse<PaymentResponse> getMyPayments(UserPrincipal userPrincipal, Pageable pageable) {
         Page<Payment> page = paymentRepository.findByUserId(userPrincipal.getId(), pageable);
         return PageResponse.<PaymentResponse>builder()
-                .data(page.getContent().stream().map(this::toResponse).toList())
-                .page(page.getNumber()).pageSize(page.getSize())
-                .total(page.getTotalElements()).totalPages(page.getTotalPages())
+                .content(page.getContent().stream().map(this::toResponse).toList())
+                .number(page.getNumber()).size(page.getSize())
+                .totalElements(page.getTotalElements()).totalPages(page.getTotalPages())
                 .first(page.isFirst()).last(page.isLast()).build();
     }
 
