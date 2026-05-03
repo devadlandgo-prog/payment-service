@@ -9,9 +9,14 @@ public class SubscriptionPlanResponse {
     private String id;
     private String name;
     private String description;
+    private BigDecimal price;
+    private String billingPeriod;
     private BigDecimal monthlyPrice;
     private BigDecimal annualPrice;
     private String currency;
     private List<String> features;
+    private Integer maxListings;
+    private Integer maxDuration;
+    private Boolean isActive;
     private boolean isPopular;
 }

@@ -1,13 +1,22 @@
 package com.landgo.paymentservice.dto.request;
 
 import com.landgo.paymentservice.enums.SubscriptionPlan;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubscriptionRequest {
-    @NotNull(message = "Subscription plan is required") private SubscriptionPlan plan;
+    private SubscriptionPlan plan;
+    private String planId;
     private String paymentMethod;
+    private String paymentMethodId;
     private String paymentToken;
     @Builder.Default private boolean autoRenew = false;
+    private BillingAddress billingAddress;
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class BillingAddress {
+        private String street;
+        private String city;
+        private String postalCode;
+    }
 }

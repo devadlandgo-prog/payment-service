@@ -30,14 +30,22 @@ public class PaymentController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @GetMapping("/transactions")
+    @Operation(summary = "Get my transactions")
+    public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getMyTransactions(
+            @CurrentUser UserPrincipal userPrincipal, @PageableDefault(size = 20) Pageable pageable) {
+        PageResponse<PaymentResponse> response = paymentService.getMyPayments(userPrincipal, pageable);
+        return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
 
 
     @GetMapping("/transactions/{id}")
-    @Operation(summary = "Get specific receipt")
-    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getTransaction(
+    @Operation(summary = "Get specific transaction")
+    public ResponseEntity<ApiResponse<PaymentResponse>> getTransaction(
             @CurrentUser UserPrincipal userPrincipal, @PathVariable String id) {
-        // Stub for specific transaction receipt
-        return ResponseEntity.ok(ApiResponse.success(java.util.Map.of("id", id, "status", "succeeded", "amount", 100)));
+        PaymentResponse response = paymentService.getMyPaymentById(userPrincipal, id);
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping("/payment/payment-sheet")

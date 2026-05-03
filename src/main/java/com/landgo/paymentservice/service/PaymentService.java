@@ -3,6 +3,8 @@ package com.landgo.paymentservice.service;
 import com.landgo.paymentservice.dto.response.PageResponse;
 import com.landgo.paymentservice.dto.response.PaymentResponse;
 import com.landgo.paymentservice.entity.Payment;
+import com.landgo.paymentservice.exception.BadRequestException;
+import com.landgo.paymentservice.exception.ResourceNotFoundException;
 import com.landgo.paymentservice.repository.PaymentRepository;
 import com.landgo.paymentservice.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,21 @@ public class PaymentService {
                 .page(page.getNumber()).pageSize(page.getSize())
                 .total(page.getTotalElements()).totalPages(page.getTotalPages())
                 .first(page.isFirst()).last(page.isLast()).build();
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentResponse getMyPaymentById(UserPrincipal userPrincipal, String id) {
+        java.util.UUID paymentId;
+        try {
+            paymentId = java.util.UUID.fromString(id);
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("Invalid transaction id", "VALIDATION_ERROR");
+        }
+
+        Payment payment = paymentRepository.findByIdAndUserIdAndDeletedFalse(
+                        paymentId, userPrincipal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction not found"));
+        return toResponse(payment);
     }
 
     private PaymentResponse toResponse(Payment payment) {

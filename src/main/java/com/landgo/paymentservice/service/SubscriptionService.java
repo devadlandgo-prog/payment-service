@@ -52,7 +52,10 @@ public class SubscriptionService {
                     PlanConfig c = PLAN_CONFIGS.get(plan);
                     return SubscriptionPlanResponse.builder().id(plan.name().toLowerCase()).name(plan.name())
                             .description(c.description()).monthlyPrice(c.monthlyPrice()).annualPrice(c.annualPrice())
-                            .currency("CAD").features(c.features()).isPopular(c.isPopular()).build();
+                            .price(c.monthlyPrice()).billingPeriod("MONTHLY")
+                            .currency("CAD").features(c.features())
+                            .maxListings(null).maxDuration(plan == SubscriptionPlan.FREE ? 36500 : 30)
+                            .isActive(true).isPopular(c.isPopular()).build();
                 }).toList();
     }
 
@@ -70,18 +73,39 @@ public class SubscriptionService {
     public SubscriptionResponse subscribe(UserPrincipal userPrincipal, SubscriptionRequest request) {
         subscriptionRepository.findActiveByUserId(userPrincipal.getId())
                 .ifPresent(sub -> { throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE"); });
-        PlanConfig config = PLAN_CONFIGS.get(request.getPlan());
+        SubscriptionPlan selectedPlan = resolvePlan(request);
+        PlanConfig config = PLAN_CONFIGS.get(selectedPlan);
+        if (config == null) {
+            throw new BadRequestException("Invalid subscription plan", "VALIDATION_ERROR");
+        }
         LocalDateTime now = LocalDateTime.now();
-        int durationDays = request.getPlan() == SubscriptionPlan.FREE ? 36500 : 30;
+        int durationDays = selectedPlan == SubscriptionPlan.FREE ? 36500 : 30;
+        String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
         Subscription subscription = Subscription.builder()
-                .userId(userPrincipal.getId()).plan(request.getPlan()).status(SubscriptionStatus.ACTIVE)
+                .userId(userPrincipal.getId()).plan(selectedPlan).status(SubscriptionStatus.ACTIVE)
                 .startDate(now).endDate(now.plusDays(durationDays)).amount(config.monthlyPrice())
-                .paymentMethod(request.getPaymentMethod()).autoRenew(request.isAutoRenew())
+                .paymentMethod(paymentMethod).autoRenew(request.isAutoRenew())
                 .maxVendorViewsPerMonth(config.maxVendorViews()).maxSavedLands(config.maxSavedLands())
                 .canAccessPremiumListings(config.canAccessPremium()).canContactVendorDirectly(config.canContactVendor()).build();
         subscription = subscriptionRepository.save(subscription);
-        log.info("User {} subscribed to plan: {}", userPrincipal.getId(), request.getPlan());
+        log.info("User {} subscribed to plan: {}", userPrincipal.getId(), selectedPlan);
         return subscriptionMapper.toResponse(subscription);
+    }
+
+    private SubscriptionPlan resolvePlan(SubscriptionRequest request) {
+        if (request.getPlan() != null) return request.getPlan();
+        if (request.getPlanId() == null || request.getPlanId().isBlank()) {
+            throw new BadRequestException("Subscription plan is required", "VALIDATION_ERROR");
+        }
+        String normalized = request.getPlanId().trim().toUpperCase();
+        if (normalized.startsWith("PLAN_")) normalized = normalized.substring(5);
+        return switch (normalized) {
+            case "FREE" -> SubscriptionPlan.FREE;
+            case "BASIC", "BASIC_LISTING" -> SubscriptionPlan.BASIC;
+            case "PREMIUM", "PROFESSIONAL" -> SubscriptionPlan.PREMIUM;
+            case "ENTERPRISE" -> SubscriptionPlan.ENTERPRISE;
+            default -> throw new BadRequestException("Invalid planId", "VALIDATION_ERROR");
+        };
     }
 
     @Transactional(readOnly = true)
