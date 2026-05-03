@@ -40,17 +40,11 @@ public class SubscriptionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Subscription successful", response));
     }
 
-    @GetMapping("/current")
-    @Operation(summary = "Get current subscription")
-    public ResponseEntity<ApiResponse<SubscriptionResponse>> getCurrentSubscription(@CurrentUser UserPrincipal userPrincipal) {
+    @GetMapping("/my")
+    @Operation(summary = "Get my active plan")
+    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(@CurrentUser UserPrincipal userPrincipal) {
         SubscriptionResponse response = subscriptionService.getCurrentSubscription(userPrincipal);
         return ResponseEntity.ok(ApiResponse.success(response));
-    }
-
-    @GetMapping("/my")
-    @Operation(summary = "Get my active plan (alias for /current)")
-    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(@CurrentUser UserPrincipal userPrincipal) {
-        return getCurrentSubscription(userPrincipal);
     }
 
     @PostMapping("/cancel")

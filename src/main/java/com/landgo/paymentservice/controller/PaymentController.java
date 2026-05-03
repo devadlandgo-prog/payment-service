@@ -30,12 +30,7 @@ public class PaymentController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
-    @GetMapping("/transactions")
-    @Operation(summary = "List user transactions (alias for /payments/my)")
-    public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getTransactions(
-            @CurrentUser UserPrincipal userPrincipal, @PageableDefault(size = 20) Pageable pageable) {
-        return getMyPayments(userPrincipal, pageable);
-    }
+
 
     @GetMapping("/transactions/{id}")
     @Operation(summary = "Get specific receipt")
