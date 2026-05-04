@@ -71,13 +71,22 @@ public class SubscriptionService {
 
     @Transactional
     public SubscriptionResponse subscribe(UserPrincipal userPrincipal, SubscriptionRequest request) {
+        log.info("Processing subscription for user: {} to plan: {}", userPrincipal.getId(), request.getPlanId());
         subscriptionRepository.findActiveByUserId(userPrincipal.getId())
-                .ifPresent(sub -> { throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE"); });
+                .ifPresent(sub -> {
+                    log.warn("Subscription failed: User {} already has an active subscription", userPrincipal.getId());
+                    throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE");
+                });
         SubscriptionPlan selectedPlan = resolvePlan(request);
         PlanConfig config = PLAN_CONFIGS.get(selectedPlan);
         if (config == null) {
+            log.warn("Subscription failed: Invalid plan for user {}", userPrincipal.getId());
             throw new BadRequestException("Invalid subscription plan", "VALIDATION_ERROR");
         }
+
+        // Mock payment processing
+        log.debug("Processing payment for user {} using method {}", userPrincipal.getId(), request.getPaymentMethodId());
+
         LocalDateTime now = LocalDateTime.now();
         int durationDays = selectedPlan == SubscriptionPlan.FREE ? 36500 : 30;
         String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
@@ -88,7 +97,7 @@ public class SubscriptionService {
                 .maxVendorViewsPerMonth(config.maxVendorViews()).maxSavedLands(config.maxSavedLands())
                 .canAccessPremiumListings(config.canAccessPremium()).canContactVendorDirectly(config.canContactVendor()).build();
         subscription = subscriptionRepository.save(subscription);
-        log.info("User {} subscribed to plan: {}", userPrincipal.getId(), selectedPlan);
+        log.info("Subscription activated: {} for user: {}", subscription.getId(), userPrincipal.getId());
         return subscriptionMapper.toResponse(subscription);
     }
 
@@ -117,14 +126,19 @@ public class SubscriptionService {
 
     @Transactional
     public void cancelSubscription(UserPrincipal userPrincipal, String reason) {
+        log.info("Request to cancel subscription for user: {}. Reason: {}", userPrincipal.getId(), reason);
         Subscription subscription = subscriptionRepository.findActiveByUserId(userPrincipal.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("No active subscription found"));
+                .orElseThrow(() -> {
+                    log.warn("Cancel failed: No active subscription for user {}", userPrincipal.getId());
+                    return new ResourceNotFoundException("No active subscription found");
+                });
+
         subscription.setStatus(SubscriptionStatus.CANCELLED);
         subscription.setCancelledAt(LocalDateTime.now());
         subscription.setCancellationReason(reason);
         subscription.setAutoRenew(false);
         subscriptionRepository.save(subscription);
-        log.info("Subscription cancelled for user: {}", userPrincipal.getId());
+        log.info("Subscription {} cancelled for user: {}", subscription.getId(), userPrincipal.getId());
     }
 
     @Transactional
