@@ -9,6 +9,9 @@ import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubscriptionPlanRequest {
+    @NotNull
+    private com.landgo.paymentservice.enums.SubscriptionPlan planType;
+
     @NotBlank(message = "Plan name is required")
     private String name;
 
@@ -26,6 +29,10 @@ public class SubscriptionPlanRequest {
 
     private List<String> features;
 
+    private int maxVendorViews;
+    private int maxSavedLands;
+    private boolean canAccessPremium;
+    private boolean canContactVendor;
     private boolean isPopular;
 
     /** market_profession | land_listing */

@@ -88,44 +88,51 @@ public class SubscriptionController {
 
     @PostMapping("/plans")
     @Operation(summary = "Create a new subscription plan (admin)")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> createPlan(
+    public ResponseEntity<ApiResponse<com.landgo.paymentservice.entity.SubscriptionPlanDetail>> createPlan(
             @Valid @RequestBody SubscriptionPlanRequest request) {
-        Map<String, Object> created = Map.of(
-                "id", UUID.randomUUID().toString(),
-                "name", request.getName(),
-                "description", request.getDescription(),
-                "monthlyPrice", request.getMonthlyPrice(),
-                "annualPrice", request.getAnnualPrice(),
-                "currency", request.getCurrency(),
-                "features", request.getFeatures() != null ? request.getFeatures() : List.of(),
-                "isPopular", request.isPopular(),
-                "type", request.getType()
-        );
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success("Plan created", created));
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = com.landgo.paymentservice.entity.SubscriptionPlanDetail.builder()
+                .planType(request.getPlanType())
+                .name(request.getName())
+                .description(request.getDescription())
+                .monthlyPrice(request.getMonthlyPrice())
+                .annualPrice(request.getAnnualPrice())
+                .currency(request.getCurrency())
+                .features(request.getFeatures())
+                .maxVendorViews(request.getMaxVendorViews())
+                .maxSavedLands(request.getMaxSavedLands())
+                .canAccessPremium(request.isCanAccessPremium())
+                .canContactVendor(request.isCanContactVendor())
+                .isPopular(request.isPopular())
+                .isActive(true)
+                .build();
+        return ResponseEntity.ok(ApiResponse.success("Plan created successfully", subscriptionService.savePlanDetail(plan)));
     }
 
     @PutMapping("/plans/{id}")
     @Operation(summary = "Update an existing subscription plan (admin)")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> updatePlan(
-            @PathVariable String id,
+    public ResponseEntity<ApiResponse<com.landgo.paymentservice.entity.SubscriptionPlanDetail>> updatePlan(
+            @PathVariable UUID id,
             @Valid @RequestBody SubscriptionPlanRequest request) {
-        Map<String, Object> updated = Map.of(
-                "id", id,
-                "name", request.getName(),
-                "description", request.getDescription(),
-                "monthlyPrice", request.getMonthlyPrice(),
-                "annualPrice", request.getAnnualPrice(),
-                "currency", request.getCurrency(),
-                "features", request.getFeatures() != null ? request.getFeatures() : List.of(),
-                "isPopular", request.isPopular(),
-                "type", request.getType()
-        );
-        return ResponseEntity.ok(ApiResponse.success("Plan updated", updated));
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail updated = com.landgo.paymentservice.entity.SubscriptionPlanDetail.builder()
+                .name(request.getName())
+                .description(request.getDescription())
+                .monthlyPrice(request.getMonthlyPrice())
+                .annualPrice(request.getAnnualPrice())
+                .currency(request.getCurrency())
+                .features(request.getFeatures())
+                .maxVendorViews(request.getMaxVendorViews())
+                .maxSavedLands(request.getMaxSavedLands())
+                .canAccessPremium(request.isCanAccessPremium())
+                .canContactVendor(request.isCanContactVendor())
+                .isPopular(request.isPopular())
+                .build();
+        return ResponseEntity.ok(ApiResponse.success("Plan updated successfully", subscriptionService.updatePlanDetail(id, updated)));
     }
 
     @DeleteMapping("/plans/{id}")
     @Operation(summary = "Delete a subscription plan (admin)")
-    public ResponseEntity<ApiResponse<Void>> deletePlan(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<Void>> deletePlan(@PathVariable UUID id) {
+        subscriptionService.deletePlanDetail(id);
         return ResponseEntity.ok(ApiResponse.success("Plan deleted successfully", null));
     }
 }

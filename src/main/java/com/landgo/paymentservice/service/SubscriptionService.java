@@ -6,13 +6,16 @@ import com.landgo.paymentservice.dto.request.SubscriptionRequest;
 import com.landgo.paymentservice.dto.response.SubscriptionPlanResponse;
 import com.landgo.paymentservice.dto.response.SubscriptionResponse;
 import com.landgo.paymentservice.entity.Subscription;
+import com.landgo.paymentservice.entity.Payment;
 import com.landgo.paymentservice.enums.BillingCycle;
+import com.landgo.paymentservice.enums.PaymentStatus;
 import com.landgo.paymentservice.enums.SubscriptionPlan;
 import com.landgo.paymentservice.enums.SubscriptionStatus;
 import com.landgo.paymentservice.exception.BadRequestException;
 import com.landgo.paymentservice.exception.ResourceNotFoundException;
 import com.landgo.paymentservice.mapper.SubscriptionMapper;
 import com.landgo.paymentservice.repository.SubscriptionRepository;
+import com.landgo.paymentservice.repository.PaymentRepository;
 import com.landgo.paymentservice.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,41 +34,63 @@ public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionMapper subscriptionMapper;
-
-    private record PlanConfig(BigDecimal monthlyPrice, BigDecimal annualPrice,
-            int maxVendorViews, int maxSavedLands, boolean canAccessPremium,
-            boolean canContactVendor, String description, List<String> features, boolean isPopular) {}
-
-    private static final Map<SubscriptionPlan, PlanConfig> PLAN_CONFIGS = Map.of(
-            SubscriptionPlan.FREE, new PlanConfig(BigDecimal.ZERO, BigDecimal.ZERO, 5, 10, false, false,
-                    "Basic access to browse listings", List.of("Browse listings", "5 vendor views/month", "10 saved lands"), false),
-            SubscriptionPlan.BASIC, new PlanConfig(new BigDecimal("9.99"), new BigDecimal("99.99"), 20, 50, false, true,
-                    "Enhanced access with direct vendor contact", List.of("Everything in Free", "20 vendor views/month", "50 saved lands", "Direct vendor contact"), false),
-            SubscriptionPlan.PREMIUM, new PlanConfig(new BigDecimal("29.99"), new BigDecimal("299.99"), 100, 200, true, true,
-                    "Full access with premium listings", List.of("Everything in Basic", "100 vendor views/month", "200 saved lands", "Premium listings access"), true),
-            SubscriptionPlan.ENTERPRISE, new PlanConfig(new BigDecimal("99.99"), new BigDecimal("999.99"), -1, -1, true, true,
-                    "Unlimited access for professionals", List.of("Everything in Premium", "Unlimited vendor views", "Unlimited saved lands", "Priority support"), false));
+    private final com.landgo.paymentservice.repository.SubscriptionPlanDetailRepository planDetailRepository;
+    private final PaymentRepository paymentRepository;
 
     public List<SubscriptionPlanResponse> getSubscriptionPlans() {
-        return Arrays.stream(SubscriptionPlan.values())
-                .map(plan -> {
-                    PlanConfig c = PLAN_CONFIGS.get(plan);
-                    return SubscriptionPlanResponse.builder().id(plan.name().toLowerCase()).name(plan.name())
-                            .description(c.description()).monthlyPrice(c.monthlyPrice()).annualPrice(c.annualPrice())
-                            .price(c.monthlyPrice()).billingPeriod("MONTHLY")
-                            .currency("CAD").features(c.features())
-                            .maxListings(null).maxDuration(plan == SubscriptionPlan.FREE ? 36500 : 30)
-                            .isActive(true).isPopular(c.isPopular()).build();
-                }).toList();
+        return planDetailRepository.findAll().stream()
+                .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
+                .map(detail -> SubscriptionPlanResponse.builder()
+                        .id(detail.getPlanType().name().toLowerCase())
+                        .name(detail.getName())
+                        .description(detail.getDescription())
+                        .monthlyPrice(detail.getMonthlyPrice())
+                        .annualPrice(detail.getAnnualPrice())
+                        .price(detail.getMonthlyPrice())
+                        .billingPeriod("MONTHLY")
+                        .currency(detail.getCurrency())
+                        .features(detail.getFeatures())
+                        .maxDuration(detail.getPlanType() == SubscriptionPlan.FREE ? 36500 : 30)
+                        .isActive(true)
+                        .isPopular(detail.isPopular())
+                        .build())
+                .toList();
     }
 
     @Transactional
     public Map<String, String> createSubscriptionIntent(UserPrincipal userPrincipal, ProfessionalSubscribeRequest request) {
-        subscriptionRepository.findActiveByUserId(userPrincipal.getId())
+        return createSubscriptionIntent(userPrincipal.getId(), request);
+    }
+
+    @Transactional
+    public Map<String, String> createSubscriptionIntent(UUID userId, ProfessionalSubscribeRequest request) {
+        subscriptionRepository.findActiveByUserId(userId)
                 .ifPresent(sub -> { throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE"); });
-        String paymentIntentId = "pi_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
-        String clientSecret = paymentIntentId + "_secret_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        log.info("Payment intent created for user {} plan {} cycle {}", userPrincipal.getId(), request.getPlan(), request.getBillingCycle());
+
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
+                .findByPlanTypeAndIsActiveTrue(request.getPlan())
+                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+
+        BigDecimal amount = request.getBillingCycle() == BillingCycle.ANNUAL
+                ? detail.getAnnualPrice()
+                : detail.getMonthlyPrice();
+
+        Payment payment = Payment.builder()
+                .userId(userId)
+                .amount(amount)
+                .currency(detail.getCurrency())
+                .status(PaymentStatus.PENDING)
+                .description("Subscription intent for " + request.getPlan())
+                .provider("INTERNAL")
+                .build();
+        payment = paymentRepository.save(payment);
+
+        String paymentIntentId = payment.getId().toString();
+        String clientSecret = paymentIntentId + "_secret";
+        payment.setProviderTransactionId(paymentIntentId);
+        paymentRepository.save(payment);
+
+        log.info("Payment intent created for user {} plan {} cycle {}", userId, request.getPlan(), request.getBillingCycle());
         return Map.of("paymentIntentId", paymentIntentId, "clientSecret", clientSecret);
     }
 
@@ -77,25 +102,32 @@ public class SubscriptionService {
                     log.warn("Subscription failed: User {} already has an active subscription", userPrincipal.getId());
                     throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
-        SubscriptionPlan selectedPlan = resolvePlan(request);
-        PlanConfig config = PLAN_CONFIGS.get(selectedPlan);
-        if (config == null) {
-            log.warn("Subscription failed: Invalid plan for user {}", userPrincipal.getId());
-            throw new BadRequestException("Invalid subscription plan", "VALIDATION_ERROR");
-        }
 
-        // Mock payment processing
+        SubscriptionPlan planType = resolvePlan(request);
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository.findByPlanTypeAndIsActiveTrue(planType)
+                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+
         log.debug("Processing payment for user {} using method {}", userPrincipal.getId(), request.getPaymentMethodId());
 
         LocalDateTime now = LocalDateTime.now();
-        int durationDays = selectedPlan == SubscriptionPlan.FREE ? 36500 : 30;
+        int durationDays = planType == SubscriptionPlan.FREE ? 36500 : 30;
         String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
+        
         Subscription subscription = Subscription.builder()
-                .userId(userPrincipal.getId()).plan(selectedPlan).status(SubscriptionStatus.ACTIVE)
-                .startDate(now).endDate(now.plusDays(durationDays)).amount(config.monthlyPrice())
-                .paymentMethod(paymentMethod).autoRenew(request.isAutoRenew())
-                .maxVendorViewsPerMonth(config.maxVendorViews()).maxSavedLands(config.maxSavedLands())
-                .canAccessPremiumListings(config.canAccessPremium()).canContactVendorDirectly(config.canContactVendor()).build();
+                .userId(userPrincipal.getId())
+                .plan(planType)
+                .status(SubscriptionStatus.ACTIVE)
+                .startDate(now)
+                .endDate(now.plusDays(durationDays))
+                .amount(detail.getMonthlyPrice())
+                .paymentMethod(paymentMethod)
+                .autoRenew(request.isAutoRenew())
+                .maxVendorViewsPerMonth(detail.getMaxVendorViews())
+                .maxSavedLands(detail.getMaxSavedLands())
+                .canAccessPremiumListings(detail.isCanAccessPremium())
+                .canContactVendorDirectly(detail.isCanContactVendor())
+                .build();
+
         subscription = subscriptionRepository.save(subscription);
         log.info("Subscription activated: {} for user: {}", subscription.getId(), userPrincipal.getId());
         return subscriptionMapper.toResponse(subscription);
@@ -147,19 +179,53 @@ public class SubscriptionService {
                 .orElseThrow(() -> new ResourceNotFoundException("No active subscription found"));
         if (subscription.getPlan() == request.getPlan())
             throw new BadRequestException("You are already on this plan", "SUBSCRIPTION_SAME_PLAN");
-        PlanConfig config = PLAN_CONFIGS.get(request.getPlan());
-        int durationDays = request.getBillingCycle() == BillingCycle.ANNUAL ? 365 : 30;
-        BigDecimal amount = request.getBillingCycle() == BillingCycle.ANNUAL ? config.annualPrice() : config.monthlyPrice();
+        
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository.findByPlanTypeAndIsActiveTrue(request.getPlan())
+                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+
         subscription.setPlan(request.getPlan());
-        subscription.setAmount(amount);
-        subscription.setEndDate(LocalDateTime.now().plusDays(durationDays));
-        subscription.setMaxVendorViewsPerMonth(config.maxVendorViews());
-        subscription.setMaxSavedLands(config.maxSavedLands());
-        subscription.setCanAccessPremiumListings(config.canAccessPremium());
-        subscription.setCanContactVendorDirectly(config.canContactVendor());
+        subscription.setAmount(detail.getMonthlyPrice());
+        subscription.setMaxVendorViewsPerMonth(detail.getMaxVendorViews());
+        subscription.setMaxSavedLands(detail.getMaxSavedLands());
+        subscription.setCanAccessPremiumListings(detail.isCanAccessPremium());
+        subscription.setCanContactVendorDirectly(detail.isCanContactVendor());
+        
         subscription = subscriptionRepository.save(subscription);
-        log.info("Subscription changed for user {} to plan {}", userPrincipal.getId(), request.getPlan());
+        log.info("Plan changed for user {} to {}", userPrincipal.getId(), request.getPlan());
         return subscriptionMapper.toResponse(subscription);
+    }
+
+    @Transactional
+    public com.landgo.paymentservice.entity.SubscriptionPlanDetail savePlanDetail(com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
+        return planDetailRepository.save(plan);
+    }
+
+    @Transactional
+    public void deletePlanDetail(UUID id) {
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = planDetailRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription plan not found"));
+        plan.setActive(false);
+        planDetailRepository.save(plan);
+    }
+
+    @Transactional
+    public com.landgo.paymentservice.entity.SubscriptionPlanDetail updatePlanDetail(UUID id, com.landgo.paymentservice.entity.SubscriptionPlanDetail updated) {
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = planDetailRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription plan not found"));
+        
+        plan.setName(updated.getName());
+        plan.setDescription(updated.getDescription());
+        plan.setMonthlyPrice(updated.getMonthlyPrice());
+        plan.setAnnualPrice(updated.getAnnualPrice());
+        plan.setCurrency(updated.getCurrency());
+        plan.setFeatures(updated.getFeatures());
+        plan.setMaxVendorViews(updated.getMaxVendorViews());
+        plan.setMaxSavedLands(updated.getMaxSavedLands());
+        plan.setCanAccessPremium(updated.isCanAccessPremium());
+        plan.setCanContactVendor(updated.isCanContactVendor());
+        plan.setPopular(updated.isPopular());
+        
+        return planDetailRepository.save(plan);
     }
 
     @Transactional(readOnly = true)
