@@ -67,11 +67,14 @@ public class SubscriptionService {
         subscriptionRepository.findActiveByUserId(userId)
                 .ifPresent(sub -> { throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE"); });
 
+        SubscriptionPlan plan = resolvePlan(request);
+        BillingCycle billingCycle = resolveBillingCycle(request);
+
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
-                .findByPlanTypeAndIsActiveTrue(request.getPlan())
+                .findByPlanTypeAndIsActiveTrue(plan)
                 .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
 
-        BigDecimal amount = request.getBillingCycle() == BillingCycle.ANNUAL
+        BigDecimal amount = billingCycle == BillingCycle.ANNUAL
                 ? detail.getAnnualPrice()
                 : detail.getMonthlyPrice();
 
@@ -80,7 +83,7 @@ public class SubscriptionService {
                 .amount(amount)
                 .currency(detail.getCurrency())
                 .status(PaymentStatus.PENDING)
-                .description("Subscription intent for " + request.getPlan())
+                .description("Subscription intent for " + plan)
                 .provider("INTERNAL")
                 .build();
         payment = paymentRepository.save(payment);
@@ -90,8 +93,43 @@ public class SubscriptionService {
         payment.setProviderTransactionId(paymentIntentId);
         paymentRepository.save(payment);
 
-        log.info("Payment intent created for user {} plan {} cycle {}", userId, request.getPlan(), request.getBillingCycle());
+        log.info("Payment intent created for user {} plan {} cycle {}", userId, plan, billingCycle);
         return Map.of("paymentIntentId", paymentIntentId, "clientSecret", clientSecret);
+    }
+
+    private SubscriptionPlan resolvePlan(ProfessionalSubscribeRequest request) {
+        if (request.getPlan() != null) {
+            return request.getPlan();
+        }
+        if (request.getPlanId() == null || request.getPlanId().isBlank()) {
+            throw new BadRequestException("planId is required", "VALIDATION_ERROR");
+        }
+        String normalized = request.getPlanId().trim().toUpperCase();
+        if (normalized.startsWith("PLAN_")) {
+            normalized = normalized.substring(5);
+        }
+        return switch (normalized) {
+            case "FREE" -> SubscriptionPlan.FREE;
+            case "BASIC", "BASIC_LISTING" -> SubscriptionPlan.BASIC;
+            case "PREMIUM", "PROFESSIONAL" -> SubscriptionPlan.PREMIUM;
+            case "ENTERPRISE" -> SubscriptionPlan.ENTERPRISE;
+            default -> throw new BadRequestException("Invalid planId", "VALIDATION_ERROR");
+        };
+    }
+
+    private BillingCycle resolveBillingCycle(ProfessionalSubscribeRequest request) {
+        if (request.getBillingCycle() != null) {
+            return request.getBillingCycle();
+        }
+        if (request.getSubscriptionType() == null || request.getSubscriptionType().isBlank()) {
+            throw new BadRequestException("subscriptionType is required", "VALIDATION_ERROR");
+        }
+        String normalized = request.getSubscriptionType().trim().toUpperCase();
+        return switch (normalized) {
+            case "MONTHLY", "MONTH" -> BillingCycle.MONTHLY;
+            case "ANNUAL", "YEARLY", "YEAR" -> BillingCycle.ANNUAL;
+            default -> throw new BadRequestException("Invalid subscriptionType", "VALIDATION_ERROR");
+        };
     }
 
     @Transactional

@@ -2,11 +2,15 @@ package com.landgo.paymentservice.dto.request;
 
 import com.landgo.paymentservice.enums.BillingCycle;
 import com.landgo.paymentservice.enums.SubscriptionPlan;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class ProfessionalSubscribeRequest {
-    @NotNull(message = "Plan is required (BASIC, PREMIUM, ENTERPRISE)") private SubscriptionPlan plan;
-    @NotNull(message = "Billing cycle is required (MONTHLY, ANNUAL)") private BillingCycle billingCycle;
+    private SubscriptionPlan plan;
+    private BillingCycle billingCycle;
+    private String planId;
+    private String subscriptionType;
+    private String paymentMethodId;
+    @Builder.Default
+    private boolean autoRenew = true;
 }

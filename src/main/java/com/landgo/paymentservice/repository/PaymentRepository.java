@@ -1,6 +1,7 @@
 package com.landgo.paymentservice.repository;
 
 import com.landgo.paymentservice.entity.Payment;
+import com.landgo.paymentservice.enums.PaymentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,9 @@ import java.util.UUID;
 public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     @Query("SELECT p FROM Payment p WHERE p.userId = :userId AND p.deleted = false ORDER BY p.createdAt DESC")
     Page<Payment> findByUserId(@Param("userId") UUID userId, Pageable pageable);
+
+    @Query("SELECT p FROM Payment p WHERE p.userId = :userId AND p.status = :status AND p.deleted = false ORDER BY p.createdAt DESC")
+    Page<Payment> findByUserIdAndStatus(@Param("userId") UUID userId, @Param("status") PaymentStatus status, Pageable pageable);
 
     Optional<Payment> findByIdAndUserIdAndDeletedFalse(UUID id, UUID userId);
 }

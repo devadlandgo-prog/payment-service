@@ -3,6 +3,7 @@ package com.landgo.paymentservice.service;
 import com.landgo.paymentservice.dto.response.PageResponse;
 import com.landgo.paymentservice.dto.response.PaymentResponse;
 import com.landgo.paymentservice.entity.Payment;
+import com.landgo.paymentservice.enums.PaymentStatus;
 import com.landgo.paymentservice.exception.BadRequestException;
 import com.landgo.paymentservice.exception.ResourceNotFoundException;
 import com.landgo.paymentservice.repository.PaymentRepository;
@@ -24,6 +25,19 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> getMyPayments(UserPrincipal userPrincipal, Pageable pageable) {
         Page<Payment> page = paymentRepository.findByUserId(userPrincipal.getId(), pageable);
+        return toPageResponse(page);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getMyPayments(UserPrincipal userPrincipal, PaymentStatus status, Pageable pageable) {
+        if (status == null) {
+            return getMyPayments(userPrincipal, pageable);
+        }
+        Page<Payment> page = paymentRepository.findByUserIdAndStatus(userPrincipal.getId(), status, pageable);
+        return toPageResponse(page);
+    }
+
+    private PageResponse<PaymentResponse> toPageResponse(Page<Payment> page) {
         return PageResponse.<PaymentResponse>builder()
                 .content(page.getContent().stream().map(this::toResponse).toList())
                 .number(page.getNumber()).size(page.getSize())

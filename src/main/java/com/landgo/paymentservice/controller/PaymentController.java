@@ -3,6 +3,7 @@ package com.landgo.paymentservice.controller;
 import com.landgo.paymentservice.dto.response.ApiResponse;
 import com.landgo.paymentservice.dto.response.PageResponse;
 import com.landgo.paymentservice.dto.response.PaymentResponse;
+import com.landgo.paymentservice.enums.PaymentStatus;
 import com.landgo.paymentservice.security.CurrentUser;
 import com.landgo.paymentservice.security.UserPrincipal;
 import com.landgo.paymentservice.service.PaymentService;
@@ -25,8 +26,10 @@ public class PaymentController {
     @GetMapping("/payments/my")
     @Operation(summary = "Get my payment history")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getMyPayments(
-            @CurrentUser UserPrincipal userPrincipal, @PageableDefault(size = 20) Pageable pageable) {
-        PageResponse<PaymentResponse> response = paymentService.getMyPayments(userPrincipal, pageable);
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestParam(required = false) PaymentStatus status,
+            @PageableDefault(size = 20) Pageable pageable) {
+        PageResponse<PaymentResponse> response = paymentService.getMyPayments(userPrincipal, status, pageable);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
