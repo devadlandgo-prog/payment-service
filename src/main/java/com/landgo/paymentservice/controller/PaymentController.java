@@ -10,6 +10,7 @@ import com.landgo.paymentservice.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping
+@Slf4j
 @RequiredArgsConstructor
 @Tag(name = "Payments", description = "Payment history and processing APIs")
 public class PaymentController {
@@ -29,6 +31,8 @@ public class PaymentController {
             @CurrentUser UserPrincipal userPrincipal,
             @RequestParam(required = false) PaymentStatus status,
             @PageableDefault(size = 20) Pageable pageable) {
+        log.info("Fetching payments for userId={} status={} page={} size={}",
+                userPrincipal.getId(), status, pageable.getPageNumber(), pageable.getPageSize());
         PageResponse<PaymentResponse> response = paymentService.getMyPayments(userPrincipal, status, pageable);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
@@ -55,6 +59,8 @@ public class PaymentController {
     @Operation(summary = "Generate Stripe PaymentIntent")
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> createPaymentSheet(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
+        log.warn("Using placeholder payment-sheet flow for userId={} payloadKeys={}",
+                userPrincipal.getId(), request != null ? request.keySet() : java.util.Set.of());
         return ResponseEntity.ok(ApiResponse.success(java.util.Map.of("paymentIntent", "pi_test")));
     }
 
@@ -62,6 +68,8 @@ public class PaymentController {
     @Operation(summary = "Confirm payment success")
     public ResponseEntity<ApiResponse<Void>> verifyAndFulfill(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
+        log.warn("Using placeholder verify-and-fulfill flow for userId={} payloadKeys={}",
+                userPrincipal.getId(), request != null ? request.keySet() : java.util.Set.of());
         return ResponseEntity.ok(ApiResponse.success("Payment verified", null));
     }
 }

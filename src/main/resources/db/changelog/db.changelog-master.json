@@ -58,6 +58,19 @@
           }
         ]
       }
+    },
+    {
+      "changeSet": {
+        "id": "4-align-tables-with-entities",
+        "author": "landgo",
+        "changes": [
+          {
+            "sql": {
+              "sql": "SET search_path TO payments; ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(255); ALTER TABLE payments ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE; ALTER TABLE subscription_plan_details ADD COLUMN IF NOT EXISTS deleted BOOLEAN NOT NULL DEFAULT FALSE;"
+            }
+          }
+        ]
+      }
     }
   ]
 }
