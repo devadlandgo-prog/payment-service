@@ -235,7 +235,10 @@ public class SubscriptionService {
 
     @Transactional
     public com.landgo.paymentservice.entity.SubscriptionPlanDetail savePlanDetail(com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
-        return planDetailRepository.save(plan);
+        log.info("Transaction BEGIN: Saving new plan detail: {}", plan.getName());
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
+        log.info("Transaction COMMIT: Plan detail saved: {}", saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -248,6 +251,7 @@ public class SubscriptionService {
 
     @Transactional
     public com.landgo.paymentservice.entity.SubscriptionPlanDetail updatePlanDetail(UUID id, com.landgo.paymentservice.entity.SubscriptionPlanDetail updated) {
+        log.info("Transaction BEGIN: Updating plan detail: {}", id);
         com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = planDetailRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Subscription plan not found"));
         
@@ -263,7 +267,9 @@ public class SubscriptionService {
         plan.setCanContactVendor(updated.isCanContactVendor());
         plan.setPopular(updated.isPopular());
         
-        return planDetailRepository.save(plan);
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
+        log.info("Transaction COMMIT: Plan detail updated: {}", id);
+        return saved;
     }
 
     @Transactional(readOnly = true)
