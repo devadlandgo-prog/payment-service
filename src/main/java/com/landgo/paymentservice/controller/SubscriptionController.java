@@ -83,7 +83,7 @@ public class SubscriptionController {
     @Operation(summary = "Get available subscription plans (public). Optional ?type=market_profession|land_listing")
     public ResponseEntity<ApiResponse<List<SubscriptionPlanResponse>>> getPlans(
             @RequestParam(required = false) String type) {
-        return ResponseEntity.ok(ApiResponse.success(subscriptionService.getSubscriptionPlans()));
+        return ResponseEntity.ok(ApiResponse.success(subscriptionService.getSubscriptionPlans(type)));
     }
 
     @PostMapping("/plans")

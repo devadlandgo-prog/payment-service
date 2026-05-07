@@ -57,6 +57,9 @@ public class SubscriptionPlanDetail extends BaseEntity {
     @Column(name = "is_popular")
     private boolean isPopular;
 
+    @Column(name = "plan_category", length = 50)
+    private String planCategory;
+
     @Column(name = "is_active")
     @Builder.Default
     private boolean isActive = true;
