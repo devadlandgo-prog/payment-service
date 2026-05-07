@@ -10,8 +10,8 @@ spring:
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 3
-      minimum-idle: 1
+      maximum-pool-size: 10
+      minimum-idle: 2
       connection-timeout: 20000
       idle-timeout: 300000
   jpa:
@@ -24,6 +24,7 @@ spring:
     open-in-view: false
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.json
+    drop-first: true
 
 app:
   jwt:
