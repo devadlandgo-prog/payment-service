@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-0-ddl-schema
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/001_schema.sql
+            relativeToChangelogFile: true
+
+  - changeSet:
+      id: payments-v1-0-0-ddl-tables
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/002_tables.sql
+            relativeToChangelogFile: true
+
+  - changeSet:
+      id: payments-v1-0-0-dml-seed-reference-data
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../dml/001_seed_reference_data.sql
+            relativeToChangelogFile: true
+

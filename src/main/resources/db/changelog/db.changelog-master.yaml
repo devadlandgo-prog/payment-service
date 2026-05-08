@@ -1,43 +1,4 @@
 databaseChangeLog:
-  - changeSet:
-      id: payments-0-create-schema
-      author: landgo
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/001_0_create_schema.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: payments-1-create-subscriptions-table
-      author: landgo
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/002_1_create_subscriptions_table.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: payments-2-create-payments-table
-      author: landgo
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/003_2_create_payments_table.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: payments-3-create-plan-details-table
-      author: landgo
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/004_3_create_plan_details_table.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: payments-4-align-tables-with-entities
-      author: landgo
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/005_4_align_tables_with_entities.sql
-            relativeToChangelogFile: false
-  - changeSet:
-      id: payments-10-add-plan-category
-      author: antigravity
-      changes:
-        - sqlFile:
-            path: db/changelog/sql/006_10_add_plan_category.sql
-            relativeToChangelogFile: false
+  - includeAll:
+      path: db/changelog/v1.0.0/changelog
+      relativeToChangelogFile: false

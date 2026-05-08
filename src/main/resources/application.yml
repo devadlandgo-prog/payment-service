@@ -28,7 +28,7 @@ spring:
     liquibase-schema: ${LIQUIBASE_SCHEMA:payments}
     database-change-log-table: ${LIQUIBASE_CHANGELOG_TABLE:databasechangelog_payments}
     database-change-log-lock-table: ${LIQUIBASE_CHANGELOG_LOCK_TABLE:databasechangeloglock_payments}
-    drop-first: ${LIQUIBASE_DROP_FIRST:false}
+    drop-first: true
 
 app:
   jwt:
