@@ -37,9 +37,11 @@ public class SubscriptionService {
     private final com.landgo.paymentservice.repository.SubscriptionPlanDetailRepository planDetailRepository;
     private final PaymentRepository paymentRepository;
 
-    public List<SubscriptionPlanResponse> getSubscriptionPlans() {
+    public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         return planDetailRepository.findAll().stream()
                 .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
+                .filter(detail -> category == null || category.isBlank() || 
+                        (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
                 .map(detail -> SubscriptionPlanResponse.builder()
                         .id(detail.getPlanType().name().toLowerCase())
                         .name(detail.getName())
