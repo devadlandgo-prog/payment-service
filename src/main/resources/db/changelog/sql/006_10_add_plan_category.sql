@@ -1,0 +1,1 @@
+SET search_path TO payments; ALTER TABLE subscription_plan_details ADD COLUMN IF NOT EXISTS plan_category VARCHAR(50); UPDATE subscription_plan_details SET plan_category = 'LAND_LISTING' WHERE plan_type IN ('FREE', 'BASIC', 'PREMIUM'); UPDATE subscription_plan_details SET plan_category = 'MARKET_PROFESSION' WHERE plan_type = 'ENTERPRISE';

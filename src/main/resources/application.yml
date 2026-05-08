@@ -23,8 +23,12 @@ spring:
         default_schema: payments
     open-in-view: false
   liquibase:
-    change-log: classpath:db/changelog/db.changelog-master.json
-    drop-first: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: ${LIQUIBASE_DEFAULT_SCHEMA:payments}
+    liquibase-schema: ${LIQUIBASE_SCHEMA:payments}
+    database-change-log-table: ${LIQUIBASE_CHANGELOG_TABLE:databasechangelog_payments}
+    database-change-log-lock-table: ${LIQUIBASE_CHANGELOG_LOCK_TABLE:databasechangeloglock_payments}
+    drop-first: ${LIQUIBASE_DROP_FIRST:false}
 
 app:
   jwt:
