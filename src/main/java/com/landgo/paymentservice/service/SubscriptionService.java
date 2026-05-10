@@ -36,6 +36,7 @@ public class SubscriptionService {
     private final SubscriptionMapper subscriptionMapper;
     private final com.landgo.paymentservice.repository.SubscriptionPlanDetailRepository planDetailRepository;
     private final PaymentRepository paymentRepository;
+    private final StripeService stripeService;
 
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         return planDetailRepository.findAll().stream()
@@ -149,28 +150,44 @@ public class SubscriptionService {
 
         log.debug("Processing payment for user {} using method {}", userPrincipal.getId(), request.getPaymentMethodId());
 
-        LocalDateTime now = LocalDateTime.now();
-        int durationDays = planType == SubscriptionPlan.FREE ? 36500 : 30;
-        String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
-        
-        Subscription subscription = Subscription.builder()
-                .userId(userPrincipal.getId())
-                .plan(planType)
-                .status(SubscriptionStatus.ACTIVE)
-                .startDate(now)
-                .endDate(now.plusDays(durationDays))
-                .amount(detail.getMonthlyPrice())
-                .paymentMethod(paymentMethod)
-                .autoRenew(request.isAutoRenew())
-                .maxVendorViewsPerMonth(detail.getMaxVendorViews())
-                .maxSavedLands(detail.getMaxSavedLands())
-                .canAccessPremiumListings(detail.isCanAccessPremium())
-                .canContactVendorDirectly(detail.isCanContactVendor())
-                .build();
+        try {
+            String customerId = stripeService.getOrCreateCustomer(userPrincipal);
+            String stripeSubscriptionId = null;
 
-        subscription = subscriptionRepository.save(subscription);
-        log.info("Subscription activated: {} for user: {}", subscription.getId(), userPrincipal.getId());
-        return subscriptionMapper.toResponse(subscription);
+            if (detail.getStripePriceId() != null && !detail.getStripePriceId().isBlank()) {
+                com.stripe.model.Subscription stripeSub = stripeService.createSubscription(customerId, detail.getStripePriceId());
+                stripeSubscriptionId = stripeSub.getId();
+            } else {
+                log.warn("No Stripe Price ID configured for plan {}, creating local-only subscription.", planType);
+            }
+
+            LocalDateTime now = LocalDateTime.now();
+            int durationDays = planType == SubscriptionPlan.FREE ? 36500 : 30;
+            String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
+            
+            Subscription subscription = Subscription.builder()
+                    .userId(userPrincipal.getId())
+                    .plan(planType)
+                    .status(SubscriptionStatus.ACTIVE)
+                    .startDate(now)
+                    .endDate(now.plusDays(durationDays))
+                    .amount(detail.getMonthlyPrice())
+                    .paymentMethod(paymentMethod)
+                    .autoRenew(request.isAutoRenew())
+                    .maxVendorViewsPerMonth(detail.getMaxVendorViews())
+                    .maxSavedLands(detail.getMaxSavedLands())
+                    .canAccessPremiumListings(detail.isCanAccessPremium())
+                    .canContactVendorDirectly(detail.isCanContactVendor())
+                    .stripeSubscriptionId(stripeSubscriptionId)
+                    .build();
+
+            subscription = subscriptionRepository.save(subscription);
+            log.info("Subscription activated: {} for user: {}", subscription.getId(), userPrincipal.getId());
+            return subscriptionMapper.toResponse(subscription);
+        } catch (Exception e) {
+            log.error("Failed to create Stripe subscription", e);
+            throw new BadRequestException("Failed to process subscription payment: " + e.getMessage(), "PAYMENT_FAILED");
+        }
     }
 
     private SubscriptionPlan resolvePlan(SubscriptionRequest request) {
@@ -204,6 +221,15 @@ public class SubscriptionService {
                     log.warn("Cancel failed: No active subscription for user {}", userPrincipal.getId());
                     return new ResourceNotFoundException("No active subscription found");
                 });
+
+        try {
+            if (subscription.getStripeSubscriptionId() != null) {
+                stripeService.cancelSubscription(subscription.getStripeSubscriptionId());
+                log.info("Successfully cancelled Stripe subscription: {}", subscription.getStripeSubscriptionId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to cancel Stripe subscription, continuing local cancellation", e);
+        }
 
         subscription.setStatus(SubscriptionStatus.CANCELLED);
         subscription.setCancelledAt(LocalDateTime.now());

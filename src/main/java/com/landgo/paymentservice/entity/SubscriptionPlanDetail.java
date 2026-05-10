@@ -63,4 +63,10 @@ public class SubscriptionPlanDetail extends BaseEntity {
     @Column(name = "is_active")
     @Builder.Default
     private boolean isActive = true;
+
+    @Column(name = "stripe_product_id", length = 100)
+    private String stripeProductId;
+
+    @Column(name = "stripe_price_id", length = 100)
+    private String stripePriceId;
 }

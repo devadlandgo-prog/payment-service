@@ -27,6 +27,7 @@ public class Subscription extends BaseEntity {
     @Column(name = "can_contact_vendor_directly") @Builder.Default private boolean canContactVendorDirectly = false;
     @Column(name = "cancelled_at") private LocalDateTime cancelledAt;
     @Column(name = "cancellation_reason", columnDefinition = "TEXT") private String cancellationReason;
+    @Column(name = "stripe_subscription_id", length = 100) private String stripeSubscriptionId;
 
     public boolean isActive() {
         return status == SubscriptionStatus.ACTIVE && endDate != null && endDate.isAfter(LocalDateTime.now());

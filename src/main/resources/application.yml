@@ -35,6 +35,10 @@ app:
     secret: ${JWT_SECRET:myVeryLongSecretKeyThatIsAtLeast256BitsForHS256Algorithm2024!}
   services:
     user-service-url: ${USER_SERVICE_URL:http://localhost:8081}
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:sk_test_123}
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_123}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_123}
 
 springdoc:
   api-docs:

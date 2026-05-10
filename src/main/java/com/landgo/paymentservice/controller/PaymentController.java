@@ -16,6 +16,9 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.landgo.paymentservice.service.StripeService;
+import com.stripe.model.PaymentIntent;
+
 @RestController
 @RequestMapping
 @Slf4j
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final StripeService stripeService;
 
     @GetMapping("/payments/my")
     @Operation(summary = "Get my payment history")
@@ -59,9 +63,22 @@ public class PaymentController {
     @Operation(summary = "Generate Stripe PaymentIntent")
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> createPaymentSheet(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
-        log.warn("Using placeholder payment-sheet flow for userId={} payloadKeys={}",
-                userPrincipal.getId(), request != null ? request.keySet() : java.util.Set.of());
-        return ResponseEntity.ok(ApiResponse.success(java.util.Map.of("paymentIntent", "pi_test")));
+        try {
+            String customerId = stripeService.getOrCreateCustomer(userPrincipal);
+            
+            // For one-off payments, extract amount from request.
+            // In a real app, this amount should be derived from the DB based on an item/product ID to prevent tampering.
+            long amountCent = Long.parseLong(request.getOrDefault("amountCent", "5000").toString());
+            String currency = request.getOrDefault("currency", "cad").toString();
+            String description = request.getOrDefault("description", "LandGo Service Payment").toString();
+
+            PaymentIntent intent = stripeService.createPaymentIntent(customerId, amountCent, currency, description);
+            
+            return ResponseEntity.ok(ApiResponse.success(java.util.Map.of("paymentIntent", intent.getClientSecret(), "customer", customerId)));
+        } catch (Exception e) {
+            log.error("Error creating payment intent", e);
+            return ResponseEntity.status(500).body(ApiResponse.error("Failed to generate payment intent: " + e.getMessage(), "STRIPE_ERROR"));
+        }
     }
 
     @PostMapping("/payment/verify-and-fulfill")
