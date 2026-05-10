@@ -56,6 +56,8 @@ public class SubscriptionService {
                         .maxDuration(detail.getPlanType() == SubscriptionPlan.FREE ? 36500 : 30)
                         .isActive(true)
                         .isPopular(detail.isPopular())
+                        .stripeProductId(detail.getStripeProductId())
+                        .stripePriceId(detail.getStripePriceId())
                         .build())
                 .toList();
     }

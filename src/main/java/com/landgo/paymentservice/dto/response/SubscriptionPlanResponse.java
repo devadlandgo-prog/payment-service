@@ -19,4 +19,6 @@ public class SubscriptionPlanResponse {
     private Integer maxDuration;
     private Boolean isActive;
     private boolean isPopular;
+    private String stripeProductId;
+    private String stripePriceId;
 }

@@ -23,4 +23,5 @@ public class SubscriptionResponse {
     private Integer maxSavedLands;
     private boolean canAccessPremiumListings;
     private boolean canContactVendorDirectly;
+    private String stripeSubscriptionId;
 }
