@@ -22,6 +22,17 @@ databaseChangeLog:
             relativeToChangelogFile: true
 
   - changeSet:
+      id: payments-v1-0-0-ddl-stripe-schema
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/003_stripe_schema.sql
+            relativeToChangelogFile: true
+
+  - changeSet:
       id: payments-v1-0-0-dml-seed-reference-data
       author: landgo
       runOnChange: true
