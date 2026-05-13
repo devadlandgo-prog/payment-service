@@ -9,3 +9,14 @@ databaseChangeLog:
         - sqlFile:
             path: ../ddl/001_add_deleted_to_billing_profiles.sql
             relativeToChangelogFile: true
+
+  - changeSet:
+      id: payments-v1-0-1-ddl-set-notnull-billing-profiles-timestamps
+      author: landgo
+      runOnChange: false
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/002_set_notnull_billing_profiles_timestamps.sql
+            relativeToChangelogFile: true
