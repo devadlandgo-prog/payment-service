@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-1-ddl-add-deleted-to-billing-profiles
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/001_add_deleted_to_billing_profiles.sql
+            relativeToChangelogFile: true
