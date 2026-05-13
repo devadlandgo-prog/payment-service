@@ -38,6 +38,7 @@ public class SubscriptionService {
     private final PaymentRepository paymentRepository;
     private final StripeService stripeService;
 
+    @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         return planDetailRepository.findAll().stream()
                 .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
@@ -52,7 +53,7 @@ public class SubscriptionService {
                         .price(detail.getMonthlyPrice())
                         .billingPeriod("MONTHLY")
                         .currency(detail.getCurrency())
-                        .features(detail.getFeatures())
+                        .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures()) : java.util.Collections.emptyList())
                         .maxDuration(detail.getPlanType() == SubscriptionPlan.FREE ? 36500 : 30)
                         .isActive(true)
                         .isPopular(detail.isPopular())
