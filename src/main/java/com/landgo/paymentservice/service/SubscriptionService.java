@@ -45,7 +45,8 @@ public class SubscriptionService {
                 .filter(detail -> category == null || category.isBlank() || 
                         (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
                 .map(detail -> SubscriptionPlanResponse.builder()
-                        .id(detail.getPlanType().name().toLowerCase())
+                        .id(detail.getId().toString())
+                        .planType(detail.getPlanType().name().toLowerCase())
                         .name(detail.getName())
                         .description(detail.getDescription())
                         .monthlyPrice(detail.getMonthlyPrice())

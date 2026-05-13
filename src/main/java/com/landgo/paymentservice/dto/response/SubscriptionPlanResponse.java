@@ -6,7 +6,8 @@ import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubscriptionPlanResponse {
-    private String id;
+    private String id;       // UUID of the plan entity (for update/delete operations)
+    private String planType; // e.g. "free", "basic" (for display/subscription requests)
     private String name;
     private String description;
     private BigDecimal price;
