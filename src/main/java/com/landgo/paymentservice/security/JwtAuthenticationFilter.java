@@ -25,15 +25,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             String jwt = getJwtFromRequest(request);
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                UUID userId = tokenProvider.getUserIdFromToken(jwt);
-                String role = tokenProvider.getRoleFromToken(jwt);
-                String email = tokenProvider.getEmailFromToken(jwt);
-                UserPrincipal userPrincipal = UserPrincipal.create(userId, email, role);
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userPrincipal, null, userPrincipal.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                try {
+                    UUID userId = tokenProvider.getUserIdFromToken(jwt);
+                    String role = tokenProvider.getRoleFromToken(jwt);
+                    String email = tokenProvider.getEmailFromToken(jwt);
+                    
+                    log.debug("Authenticated user {} with role {}", userId, role);
+                    
+                    UserPrincipal userPrincipal = UserPrincipal.create(userId, email, role);
+                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(userPrincipal, null, userPrincipal.getAuthorities());
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } catch (Exception ex) {
+                    log.error("Failed to create UserPrincipal from token", ex);
+                }
             }
-        } catch (Exception ex) { log.error("Could not set user authentication in security context", ex); }
+        } catch (Exception ex) {
+            log.error("JWT Authentication failed", ex);
+        }
         filterChain.doFilter(request, response);
     }
 

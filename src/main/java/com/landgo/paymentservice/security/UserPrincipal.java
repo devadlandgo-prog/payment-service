@@ -20,8 +20,13 @@ public class UserPrincipal implements UserDetails {
     private Collection<? extends GrantedAuthority> authorities;
 
     public static UserPrincipal create(UUID id, String email, String role) {
-        Role r = Role.valueOf(role);
-        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+        Role r;
+        try {
+            r = (role != null) ? Role.valueOf(role.toUpperCase()) : Role.VENDOR;
+        } catch (IllegalArgumentException e) {
+            r = Role.VENDOR;
+        }
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + r.name()));
         return new UserPrincipal(id, email, r, authorities);
     }
 
