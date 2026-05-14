@@ -111,14 +111,28 @@ public class SubscriptionService {
                 .build();
         payment = paymentRepository.save(payment);
 
-        String paymentIntentId = payment.getId().toString();
-        // For now, if we don't have a real Stripe PaymentIntent yet, we use this as a placeholder
-        // In a real scenario, we'd call stripeService.createPaymentIntent
-        payment.setProviderTransactionId(paymentIntentId);
-        paymentRepository.save(payment);
+        try {
+            String customerId = stripeService.getOrCreateCustomer(userId);
+            long amountCent = amount.multiply(BigDecimal.valueOf(100)).longValue();
+            com.stripe.model.PaymentIntent intent = stripeService.createPaymentIntent(
+                    customerId, amountCent, detail.getCurrency().toLowerCase(), "Subscription for " + plan);
+            String ephemeralKey = stripeService.getEphemeralKey(customerId);
 
-        log.info("Payment intent created for user {} plan {} cycle {}. SubID: {}", userId, plan, billingCycle, subscription.getId());
-        return Map.of("paymentIntentId", paymentIntentId, "clientSecret", paymentIntentId + "_secret");
+            payment.setProviderTransactionId(intent.getId());
+            paymentRepository.save(payment);
+
+            log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, plan, billingCycle, subscription.getId());
+            return Map.of(
+                    "paymentIntent", intent.getClientSecret(),
+                    "customer", customerId,
+                    "ephemeralKey", ephemeralKey,
+                    "publishableKey", stripeService.getPublishableKey(),
+                    "subscriptionId", subscription.getId().toString()
+            );
+        } catch (com.stripe.exception.StripeException e) {
+            log.error("Failed to create Stripe PaymentIntent for subscription", e);
+            throw new RuntimeException("Stripe error: " + e.getMessage());
+        }
     }
 
     private SubscriptionPlan resolvePlan(ProfessionalSubscribeRequest request) {

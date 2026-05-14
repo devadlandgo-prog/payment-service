@@ -71,10 +71,13 @@ public class PaymentController {
             String description = request.getDescription() != null ? request.getDescription() : "LandGo Service Payment";
 
             PaymentIntent intent = stripeService.createPaymentIntent(customerId, amountCent, currency, description);
+            String ephemeralKey = stripeService.getEphemeralKey(customerId);
 
             return ResponseEntity.ok(ApiResponse.success(java.util.Map.of(
                     "paymentIntent", intent.getClientSecret(),
-                    "customer", customerId)));
+                    "customer", customerId,
+                    "ephemeralKey", ephemeralKey,
+                    "publishableKey", stripeService.getPublishableKey())));
         } catch (Exception e) {
             log.error("Error creating payment intent", e);
             return ResponseEntity.status(500).body(ApiResponse.error(

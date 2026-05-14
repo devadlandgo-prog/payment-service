@@ -24,12 +24,18 @@ import java.util.UUID;
 public class StripeService {
 
     private final BillingProfileRepository billingProfileRepository;
+    
+    @org.springframework.beans.factory.annotation.Value("${app.stripe.publishable-key}")
+    private String publishableKey;
 
     /**
      * Retrieves an existing Stripe Customer or creates a new one for the user.
      */
     public String getOrCreateCustomer(UserPrincipal userPrincipal) throws StripeException {
-        UUID userId = userPrincipal.getId();
+        return getOrCreateCustomer(userPrincipal.getId());
+    }
+
+    public String getOrCreateCustomer(UUID userId) throws StripeException {
         Optional<BillingProfile> profileOpt = billingProfileRepository.findByUserId(userId);
 
         if (profileOpt.isPresent()) {
@@ -52,6 +58,23 @@ public class StripeService {
         billingProfileRepository.save(newProfile);
 
         return customer.getId();
+    }
+
+    /**
+     * Generates an ephemeral key for the Stripe customer.
+     */
+    public String getEphemeralKey(String customerId) throws StripeException {
+        com.stripe.param.EphemeralKeyCreateParams params = com.stripe.param.EphemeralKeyCreateParams.builder()
+                .setCustomer(customerId)
+                .setStripeVersion("2024-04-10") // Should match the SDK version
+                .build();
+
+        com.stripe.model.EphemeralKey key = com.stripe.model.EphemeralKey.create(params);
+        return key.getSecret();
+    }
+
+    public String getPublishableKey() {
+        return publishableKey;
     }
 
     /**
