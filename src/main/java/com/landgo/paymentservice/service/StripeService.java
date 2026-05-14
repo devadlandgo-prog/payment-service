@@ -46,22 +46,38 @@ public class StripeService {
 
                 String customerEmail = (email != null && !email.isBlank()) ? email : "user_" + userId + "@example.com";
 
-                CustomerCreateParams params = CustomerCreateParams.builder()
+                // 1. Search for existing customer in Stripe by email
+                CustomerListParams listParams = CustomerListParams.builder()
                                 .setEmail(customerEmail)
-                                .setName("User " + userId)
-                                .putMetadata("userId", userId.toString())
+                                .setLimit(1L)
                                 .build();
+                CustomerCollection customers = Customer.list(listParams);
 
-                Customer customer = Customer.create(params);
+                String stripeCustomerId;
+                if (!customers.getData().isEmpty()) {
+                        stripeCustomerId = customers.getData().get(0).getId();
+                        log.info("Found existing Stripe customer: {} for email: {}", stripeCustomerId, customerEmail);
+                } else {
+                        // 2. Create new customer if not found
+                        CustomerCreateParams createParams = CustomerCreateParams.builder()
+                                        .setEmail(customerEmail)
+                                        .setName("User " + userId)
+                                        .putMetadata("userId", userId.toString())
+                                        .build();
+                        Customer customer = Customer.create(createParams);
+                        stripeCustomerId = customer.getId();
+                        log.info("Created new Stripe customer: {} for email: {}", stripeCustomerId, customerEmail);
+                }
 
+                // 3. Save to local billing profile
                 BillingProfile newProfile = BillingProfile.builder()
                                 .id(UUID.randomUUID())
                                 .userId(userId)
-                                .stripeCustomerId(customer.getId())
+                                .stripeCustomerId(stripeCustomerId)
                                 .build();
                 billingProfileRepository.save(newProfile);
 
-                return customer.getId();
+                return stripeCustomerId;
         }
 
         /**
