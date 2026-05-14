@@ -26,9 +26,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(a -> a
                 .requestMatchers("/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/internal/**").permitAll()
-                .requestMatchers(org.springframework.http.HttpMethod.GET, "/subscriptions/plans").permitAll()
-                .requestMatchers(new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/payment/webhook/**")).permitAll()
-                .requestMatchers(new org.springframework.security.web.util.matcher.AntPathRequestMatcher("/payment/webhook")).permitAll()
+                .requestMatchers("/subscriptions/plans/**", "/subscriptions/plans").permitAll()
+                .requestMatchers("/payment/webhook/**", "/payment/webhook", "**/webhook/**").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
