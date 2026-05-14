@@ -25,4 +25,5 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
     List<Subscription> findSubscriptionsToRenew(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     long countByStatus(SubscriptionStatus status);
+    Optional<Subscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 }

@@ -93,6 +93,21 @@ public class StripeService {
     }
 
     /**
+     * Updates an active Stripe subscription (e.g., plan change).
+     */
+    public Subscription updateSubscription(String stripeSubscriptionId, String newPriceId) throws StripeException {
+        Subscription subscription = Subscription.retrieve(stripeSubscriptionId);
+        com.stripe.param.SubscriptionUpdateParams params = com.stripe.param.SubscriptionUpdateParams.builder()
+                .addItem(com.stripe.param.SubscriptionUpdateParams.Item.builder()
+                        .setId(subscription.getItems().getData().get(0).getId())
+                        .setPrice(newPriceId)
+                        .build())
+                .setPaymentBehavior(com.stripe.param.SubscriptionUpdateParams.PaymentBehavior.ALLOW_INCOMPLETE)
+                .build();
+        return subscription.update(params);
+    }
+
+    /**
      * Cancels an active Stripe subscription.
      */
     public Subscription cancelSubscription(String stripeSubscriptionId) throws StripeException {

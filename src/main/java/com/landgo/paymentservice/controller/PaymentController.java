@@ -62,31 +62,49 @@ public class PaymentController {
     @PostMapping("/payment/payment-sheet")
     @Operation(summary = "Generate Stripe PaymentIntent")
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> createPaymentSheet(
-            @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
+            @CurrentUser UserPrincipal userPrincipal, @jakarta.validation.Valid @RequestBody com.landgo.paymentservice.dto.request.PaymentSheetRequest request) {
         try {
             String customerId = stripeService.getOrCreateCustomer(userPrincipal);
-            
-            // For one-off payments, extract amount from request.
-            // In a real app, this amount should be derived from the DB based on an item/product ID to prevent tampering.
-            long amountCent = Long.parseLong(request.getOrDefault("amountCent", "5000").toString());
-            String currency = request.getOrDefault("currency", "cad").toString();
-            String description = request.getOrDefault("description", "LandGo Service Payment").toString();
+
+            long amountCent = request.getAmountCent();
+            String currency = request.getCurrency().toLowerCase();
+            String description = request.getDescription() != null ? request.getDescription() : "LandGo Service Payment";
 
             PaymentIntent intent = stripeService.createPaymentIntent(customerId, amountCent, currency, description);
-            
-            return ResponseEntity.ok(ApiResponse.success(java.util.Map.of("paymentIntent", intent.getClientSecret(), "customer", customerId)));
+
+            return ResponseEntity.ok(ApiResponse.success(java.util.Map.of(
+                    "paymentIntent", intent.getClientSecret(),
+                    "customer", customerId)));
         } catch (Exception e) {
             log.error("Error creating payment intent", e);
-            return ResponseEntity.status(500).body(ApiResponse.error("Failed to generate payment intent: " + e.getMessage(), "STRIPE_ERROR"));
+            return ResponseEntity.status(500).body(ApiResponse.error(
+                    "Failed to generate payment intent: " + e.getMessage(), "STRIPE_ERROR"));
         }
     }
 
     @PostMapping("/payment/verify-and-fulfill")
-    @Operation(summary = "Confirm payment success")
+    @Operation(summary = "Verify Stripe PaymentIntent and activate subscription")
     public ResponseEntity<ApiResponse<Void>> verifyAndFulfill(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
-        log.warn("Using placeholder verify-and-fulfill flow for userId={} payloadKeys={}",
-                userPrincipal.getId(), request != null ? request.keySet() : java.util.Set.of());
-        return ResponseEntity.ok(ApiResponse.success("Payment verified", null));
+        if (request == null || !request.containsKey("paymentIntentId")) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("paymentIntentId is required", "VALIDATION_ERROR"));
+        }
+        String paymentIntentId = request.get("paymentIntentId").toString();
+        try {
+            com.stripe.model.PaymentIntent intent = com.stripe.model.PaymentIntent.retrieve(paymentIntentId);
+            if (!"succeeded".equals(intent.getStatus())) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Payment has not succeeded. Status: " + intent.getStatus(), "PAYMENT_NOT_SUCCEEDED"));
+            }
+            // Mark the corresponding internal payment record as SUCCESS
+            paymentService.markPaymentSucceeded(userPrincipal, paymentIntentId);
+            log.info("Payment verified and fulfilled for userId={} paymentIntentId={}", userPrincipal.getId(), paymentIntentId);
+            return ResponseEntity.ok(ApiResponse.success("Payment verified and fulfilled", null));
+        } catch (com.stripe.exception.StripeException e) {
+            log.error("Stripe error verifying payment intent {}: {}", paymentIntentId, e.getMessage());
+            return ResponseEntity.status(500).body(ApiResponse.error(
+                    "Failed to verify payment: " + e.getMessage(), "STRIPE_ERROR"));
+        }
     }
 }

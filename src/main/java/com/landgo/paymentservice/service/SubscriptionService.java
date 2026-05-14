@@ -85,23 +85,40 @@ public class SubscriptionService {
                 ? detail.getAnnualPrice()
                 : detail.getMonthlyPrice();
 
+        Subscription subscription = Subscription.builder()
+                .userId(userId)
+                .plan(plan)
+                .status(SubscriptionStatus.PENDING)
+                .startDate(LocalDateTime.now())
+                .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
+                .amount(amount)
+                .autoRenew(true)
+                .maxVendorViewsPerMonth(detail.getMaxVendorViews())
+                .maxSavedLands(detail.getMaxSavedLands())
+                .canAccessPremiumListings(detail.isCanAccessPremium())
+                .canContactVendorDirectly(detail.isCanContactVendor())
+                .build();
+        subscription = subscriptionRepository.save(subscription);
+
         Payment payment = Payment.builder()
                 .userId(userId)
                 .amount(amount)
                 .currency(detail.getCurrency())
                 .status(PaymentStatus.PENDING)
                 .description("Subscription intent for " + plan)
-                .provider("INTERNAL")
+                .provider("STRIPE")
+                .subscription(subscription)
                 .build();
         payment = paymentRepository.save(payment);
 
         String paymentIntentId = payment.getId().toString();
-        String clientSecret = paymentIntentId + "_secret";
+        // For now, if we don't have a real Stripe PaymentIntent yet, we use this as a placeholder
+        // In a real scenario, we'd call stripeService.createPaymentIntent
         payment.setProviderTransactionId(paymentIntentId);
         paymentRepository.save(payment);
 
-        log.info("Payment intent created for user {} plan {} cycle {}", userId, plan, billingCycle);
-        return Map.of("paymentIntentId", paymentIntentId, "clientSecret", clientSecret);
+        log.info("Payment intent created for user {} plan {} cycle {}. SubID: {}", userId, plan, billingCycle, subscription.getId());
+        return Map.of("paymentIntentId", paymentIntentId, "clientSecret", paymentIntentId + "_secret");
     }
 
     private SubscriptionPlan resolvePlan(ProfessionalSubscribeRequest request) {
@@ -254,15 +271,104 @@ public class SubscriptionService {
                 .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
 
         subscription.setPlan(request.getPlan());
-        subscription.setAmount(detail.getMonthlyPrice());
+        subscription.setAmount(request.getBillingCycle() == BillingCycle.ANNUAL
+                ? detail.getAnnualPrice() : detail.getMonthlyPrice());
         subscription.setMaxVendorViewsPerMonth(detail.getMaxVendorViews());
         subscription.setMaxSavedLands(detail.getMaxSavedLands());
         subscription.setCanAccessPremiumListings(detail.isCanAccessPremium());
         subscription.setCanContactVendorDirectly(detail.isCanContactVendor());
-        
+
+        // Update Stripe subscription if it exists
+        if (subscription.getStripeSubscriptionId() != null && detail.getStripePriceId() != null) {
+            try {
+                stripeService.updateSubscription(subscription.getStripeSubscriptionId(), detail.getStripePriceId());
+            } catch (Exception e) {
+                log.error("Failed to update Stripe subscription: {}", e.getMessage());
+                // Depending on requirements, we might want to throw an exception here
+            }
+        }
+
+        // Extend end date from now based on billing cycle
+        LocalDateTime now = LocalDateTime.now();
+        int durationDays = request.getBillingCycle() == BillingCycle.ANNUAL ? 365 : 30;
+        subscription.setStartDate(now);
+        subscription.setEndDate(now.plusDays(durationDays));
+
         subscription = subscriptionRepository.save(subscription);
-        log.info("Plan changed for user {} to {}", userPrincipal.getId(), request.getPlan());
+        log.info("Plan changed for user {} to {} on {} cycle", userPrincipal.getId(), request.getPlan(), request.getBillingCycle());
         return subscriptionMapper.toResponse(subscription);
+    }
+
+    @Transactional
+    public void handleInvoicePaymentSucceeded(String stripeSubscriptionId, String stripeCustomerId, Long amountPaid, String currency, String paymentIntentId) {
+        subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
+                .ifPresentOrElse(sub -> {
+                    sub.setStatus(SubscriptionStatus.ACTIVE);
+                    // Extend end date by 30 days or 1 year based on some logic (or just use 30 for now as default)
+                    // In a real app, we'd check the billing cycle from the subscription or invoice
+                    if (sub.getEndDate() == null || sub.getEndDate().isBefore(LocalDateTime.now())) {
+                        sub.setEndDate(LocalDateTime.now().plusDays(30));
+                    }
+                    subscriptionRepository.save(sub);
+                    log.info("Subscription {} activated/renewed for userId={}", sub.getId(), sub.getUserId());
+
+                    // Record payment
+                    BigDecimal amount = amountPaid != null
+                            ? BigDecimal.valueOf(amountPaid).divide(BigDecimal.valueOf(100))
+                            : sub.getAmount();
+                    
+                    Payment payment = Payment.builder()
+                            .userId(sub.getUserId())
+                            .amount(amount)
+                            .currency(currency != null ? currency.toUpperCase() : "CAD")
+                            .status(PaymentStatus.SUCCESS)
+                            .description("Stripe subscription renewal: " + stripeSubscriptionId)
+                            .provider("STRIPE")
+                            .providerTransactionId(paymentIntentId)
+                            .subscription(sub)
+                            .build();
+                    paymentRepository.save(payment);
+                }, () -> log.warn("Subscription not found for Stripe ID: {}", stripeSubscriptionId));
+    }
+
+    @Transactional
+    public void handleInvoicePaymentFailed(String stripeSubscriptionId, Long amountDue, String currency, String paymentIntentId) {
+        subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
+                .ifPresent(sub -> {
+                    // We don't necessarily cancel immediately, Stripe may retry
+                    // sub.setStatus(SubscriptionStatus.EXPIRED);
+                    // subscriptionRepository.save(sub);
+                    log.warn("Payment failed for subscription {} (userId={})", sub.getId(), sub.getUserId());
+
+                    BigDecimal amount = amountDue != null
+                            ? BigDecimal.valueOf(amountDue).divide(BigDecimal.valueOf(100))
+                            : sub.getAmount();
+
+                    Payment payment = Payment.builder()
+                            .userId(sub.getUserId())
+                            .amount(amount)
+                            .currency(currency != null ? currency.toUpperCase() : "CAD")
+                            .status(PaymentStatus.FAILED)
+                            .description("Stripe payment failed for subscription: " + stripeSubscriptionId)
+                            .provider("STRIPE")
+                            .providerTransactionId(paymentIntentId)
+                            .subscription(sub)
+                            .build();
+                    paymentRepository.save(payment);
+                });
+    }
+
+    @Transactional
+    public void handleSubscriptionDeleted(String stripeSubscriptionId) {
+        subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
+                .ifPresent(sub -> {
+                    sub.setStatus(SubscriptionStatus.CANCELLED);
+                    sub.setCancelledAt(LocalDateTime.now());
+                    sub.setCancellationReason("Cancelled via Stripe (deleted)");
+                    sub.setAutoRenew(false);
+                    subscriptionRepository.save(sub);
+                    log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(), sub.getUserId());
+                });
     }
 
     @Transactional
@@ -307,6 +413,16 @@ public class SubscriptionService {
     @Transactional(readOnly = true)
     public boolean hasActiveSubscription(UUID userId) {
         return subscriptionRepository.findActiveByUserId(userId).isPresent();
+    }
+
+    /**
+     * Validates that the user has an active subscription.
+     * Throws ResourceNotFoundException if not.
+     */
+    @Transactional(readOnly = true)
+    public void validateActiveSubscription(UserPrincipal userPrincipal) {
+        subscriptionRepository.findActiveByUserId(userPrincipal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("No active subscription found. Please subscribe to a plan first."));
     }
 
     @Scheduled(cron = "0 0 0 * * *")

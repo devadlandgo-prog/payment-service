@@ -45,6 +45,25 @@ public class PaymentService {
                 .first(page.isFirst()).last(page.isLast()).build();
     }
 
+    @Transactional
+    public void markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId) {
+        paymentRepository.findByProviderTransactionIdAndUserId(providerTransactionId, userPrincipal.getId())
+                .ifPresent(payment -> {
+                    payment.setStatus(PaymentStatus.SUCCESS);
+                    paymentRepository.save(payment);
+                    
+                    // If this payment is linked to a subscription, activate it
+                    if (payment.getSubscription() != null) {
+                        com.landgo.paymentservice.entity.Subscription sub = payment.getSubscription();
+                        sub.setStatus(com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE);
+                        sub.setStartDate(java.time.LocalDateTime.now());
+                        // End date is already set during intent creation, but we could adjust it here if needed
+                    }
+                    
+                    log.info("Marked payment {} as SUCCESS for userId={}", providerTransactionId, userPrincipal.getId());
+                });
+    }
+
     @Transactional(readOnly = true)
     public PaymentResponse getMyPaymentById(UserPrincipal userPrincipal, String id) {
         java.util.UUID paymentId;

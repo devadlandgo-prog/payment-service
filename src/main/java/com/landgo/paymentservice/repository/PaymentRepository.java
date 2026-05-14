@@ -20,4 +20,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     Page<Payment> findByUserIdAndStatus(@Param("userId") UUID userId, @Param("status") PaymentStatus status, Pageable pageable);
 
     Optional<Payment> findByIdAndUserIdAndDeletedFalse(UUID id, UUID userId);
+
+    @Query("SELECT p FROM Payment p WHERE p.providerTransactionId = :txId AND p.userId = :userId AND p.deleted = false")
+    Optional<Payment> findByProviderTransactionIdAndUserId(@Param("txId") String providerTransactionId, @Param("userId") java.util.UUID userId);
 }

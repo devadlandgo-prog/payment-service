@@ -1,9 +1,15 @@
 package com.landgo.paymentservice.controller;
 
-import com.landgo.paymentservice.dto.response.ApiResponse;
+import com.landgo.paymentservice.entity.BillingProfile;
+import com.landgo.paymentservice.entity.Payment;
+import com.landgo.paymentservice.entity.Subscription;
+import com.landgo.paymentservice.enums.PaymentStatus;
+import com.landgo.paymentservice.enums.SubscriptionStatus;
+import com.landgo.paymentservice.service.SubscriptionService;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
+import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.net.Webhook;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +23,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Optional;
+import java.util.UUID;
+
 @Slf4j
 @RestController
 @RequestMapping("/payment/webhook")
@@ -26,13 +37,14 @@ public class StripeWebhookController {
     @Value("${app.stripe.webhook-secret}")
     private String webhookSecret;
 
+    private final SubscriptionService subscriptionService;
+
     @PostMapping
     public ResponseEntity<String> handleStripeEvent(
             @RequestBody String payload,
             @RequestHeader("Stripe-Signature") String sigHeader) {
-        
-        Event event;
 
+        Event event;
         try {
             event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
         } catch (SignatureVerificationException e) {
@@ -43,32 +55,59 @@ public class StripeWebhookController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid payload");
         }
 
-        EventDataObjectDeserializer dataObjectDeserializer = event.getDataObjectDeserializer();
-        StripeObject stripeObject = null;
-        if (dataObjectDeserializer.getObject().isPresent()) {
-            stripeObject = dataObjectDeserializer.getObject().get();
-        } else {
-            log.warn("Deserialization failed, probably due to an API version mismatch.");
+        EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
+        StripeObject stripeObject = deserializer.getObject().orElse(null);
+        if (stripeObject == null) {
+            log.warn("Deserialization failed for event {} — possible API version mismatch", event.getType());
+            return ResponseEntity.ok("Success (but deserialization failed)");
         }
 
         switch (event.getType()) {
-            case "invoice.payment_succeeded":
-                log.info("Payment succeeded for invoice: {}", stripeObject);
-                // Handle payment success (e.g., mark transaction as success)
-                break;
-            case "invoice.payment_failed":
-                log.warn("Payment failed for invoice: {}", stripeObject);
-                // Handle payment failure (e.g., mark transaction as failed, suspend subscription)
-                break;
-            case "customer.subscription.deleted":
-                log.info("Subscription deleted: {}", stripeObject);
-                // Handle subscription cancellation
-                break;
-            default:
-                log.info("Unhandled event type: {}", event.getType());
-                break;
+            case "invoice.payment_succeeded" -> handleInvoicePaymentSucceeded(stripeObject);
+            case "invoice.payment_failed"    -> handleInvoicePaymentFailed(stripeObject);
+            case "customer.subscription.deleted" -> handleSubscriptionDeleted(stripeObject);
+            default -> log.info("Unhandled Stripe event type: {}", event.getType());
         }
 
         return ResponseEntity.ok("Success");
+    }
+
+    private void handleInvoicePaymentSucceeded(StripeObject stripeObject) {
+        if (!(stripeObject instanceof Invoice invoice)) return;
+
+        String stripeSubscriptionId = invoice.getSubscription();
+        String stripeCustomerId = invoice.getCustomer();
+        Long amountPaid = invoice.getAmountPaid();
+        String currency = invoice.getCurrency();
+        String paymentIntentId = invoice.getPaymentIntent();
+
+        log.info("Webhook invoice.payment_succeeded: subId={} amountPaid={}", stripeSubscriptionId, amountPaid);
+        if (stripeSubscriptionId != null) {
+            subscriptionService.handleInvoicePaymentSucceeded(stripeSubscriptionId, stripeCustomerId, amountPaid, currency, paymentIntentId);
+        }
+    }
+
+    private void handleInvoicePaymentFailed(StripeObject stripeObject) {
+        if (!(stripeObject instanceof Invoice invoice)) return;
+
+        String stripeSubscriptionId = invoice.getSubscription();
+        Long amountDue = invoice.getAmountDue();
+        String currency = invoice.getCurrency();
+        String paymentIntentId = invoice.getPaymentIntent();
+
+        log.warn("Webhook invoice.payment_failed: subId={} amountDue={}", stripeSubscriptionId, amountDue);
+        if (stripeSubscriptionId != null) {
+            subscriptionService.handleInvoicePaymentFailed(stripeSubscriptionId, amountDue, currency, paymentIntentId);
+        }
+    }
+
+    private void handleSubscriptionDeleted(StripeObject stripeObject) {
+        if (!(stripeObject instanceof com.stripe.model.Subscription stripeSub)) return;
+
+        String stripeSubscriptionId = stripeSub.getId();
+        log.info("Webhook customer.subscription.deleted: subId={}", stripeSubscriptionId);
+        if (stripeSubscriptionId != null) {
+            subscriptionService.handleSubscriptionDeleted(stripeSubscriptionId);
+        }
     }
 }

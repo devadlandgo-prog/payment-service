@@ -16,6 +16,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -72,22 +73,24 @@ public class SubscriptionController {
     }
 
     @PostMapping("/activate-land")
-    @Operation(summary = "Activate listing plan")
+    @Operation(summary = "Activate a land listing — requires an active subscription")
     public ResponseEntity<ApiResponse<Void>> activateLand(@CurrentUser UserPrincipal userPrincipal, @RequestParam String landId) {
+        subscriptionService.validateActiveSubscription(userPrincipal);
         return ResponseEntity.ok(ApiResponse.success("Land listing activated", null));
     }
 
     // ── Plan catalogue CRUD (Admin) ─────────────────────────────────────────
 
     @GetMapping("/plans")
-    @Operation(summary = "Get available subscription plans (public). Optional ?type=market_profession|land_listing")
+    @Operation(summary = "Get available subscription plans. Optional ?type=market_profession|land_listing")
     public ResponseEntity<ApiResponse<List<SubscriptionPlanResponse>>> getPlans(
             @RequestParam(required = false) String type) {
         return ResponseEntity.ok(ApiResponse.success(subscriptionService.getSubscriptionPlans(type)));
     }
 
     @PostMapping("/plans")
-    @Operation(summary = "Create a new subscription plan (admin)")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Create a new subscription plan (admin only)")
     public ResponseEntity<ApiResponse<com.landgo.paymentservice.entity.SubscriptionPlanDetail>> createPlan(
             @Valid @RequestBody SubscriptionPlanRequest request) {
         com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = com.landgo.paymentservice.entity.SubscriptionPlanDetail.builder()
@@ -109,7 +112,8 @@ public class SubscriptionController {
     }
 
     @PutMapping("/plans/{id}")
-    @Operation(summary = "Update an existing subscription plan (admin)")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Update an existing subscription plan (admin only)")
     public ResponseEntity<ApiResponse<com.landgo.paymentservice.entity.SubscriptionPlanDetail>> updatePlan(
             @PathVariable UUID id,
             @Valid @RequestBody SubscriptionPlanRequest request) {
@@ -130,7 +134,8 @@ public class SubscriptionController {
     }
 
     @DeleteMapping("/plans/{id}")
-    @Operation(summary = "Delete a subscription plan (admin)")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Delete a subscription plan (admin only)")
     public ResponseEntity<ApiResponse<Void>> deletePlan(@PathVariable UUID id) {
         subscriptionService.deletePlanDetail(id);
         return ResponseEntity.ok(ApiResponse.success("Plan deleted successfully", null));
