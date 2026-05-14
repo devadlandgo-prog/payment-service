@@ -42,7 +42,12 @@ public class StripeWebhookController {
     @PostMapping
     public ResponseEntity<String> handleStripeEvent(
             @RequestBody String payload,
-            @RequestHeader("Stripe-Signature") String sigHeader) {
+            @RequestHeader(value = "Stripe-Signature", required = false) String sigHeader) {
+        
+        if (sigHeader == null || sigHeader.isBlank()) {
+            log.warn("Missing Stripe-Signature header");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Missing signature");
+        }
 
         Event event;
         try {
@@ -59,7 +64,7 @@ public class StripeWebhookController {
         StripeObject stripeObject = deserializer.getObject().orElse(null);
         if (stripeObject == null) {
             log.warn("Deserialization failed for event {} — possible API version mismatch", event.getType());
-            return ResponseEntity.ok("Success (but deserialization failed)");
+            return ResponseEntity.ok("Success");
         }
 
         switch (event.getType()) {

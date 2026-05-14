@@ -96,7 +96,7 @@ public class SubscriptionService {
         Subscription subscription = Subscription.builder()
                 .userId(userId)
                 .plan(plan)
-                .status(SubscriptionStatus.PENDING)
+                .status(plan == SubscriptionPlan.FREE ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
                 .startDate(LocalDateTime.now())
                 .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
                 .amount(amount)
