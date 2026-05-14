@@ -68,7 +68,9 @@ public class SubscriptionService {
     @Transactional
     public Map<String, String> createSubscriptionIntent(UserPrincipal userPrincipal,
             ProfessionalSubscribeRequest request) {
-        return createSubscriptionIntent(userPrincipal.getId(), userPrincipal.getEmail(), request);
+        String email = (request.getEmail() != null && !request.getEmail().isBlank()) 
+                ? request.getEmail() : userPrincipal.getEmail();
+        return createSubscriptionIntent(userPrincipal.getId(), email, request);
     }
 
     @Transactional

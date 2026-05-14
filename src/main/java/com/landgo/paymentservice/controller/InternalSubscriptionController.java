@@ -28,6 +28,6 @@ public class InternalSubscriptionController {
     public ResponseEntity<Map<String, String>> createSubscriptionIntent(
             @PathVariable UUID userId,
             @RequestBody ProfessionalSubscribeRequest request) {
-        return ResponseEntity.ok(subscriptionService.createSubscriptionIntent(userId, null, request));
+        return ResponseEntity.ok(subscriptionService.createSubscriptionIntent(userId, request.getEmail(), request));
     }
 }
