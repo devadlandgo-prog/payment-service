@@ -15,13 +15,14 @@ import java.util.UUID;
 @AllArgsConstructor
 public class UserPrincipal implements UserDetails {
     private UUID id;
+    private String email;
     private Role role;
     private Collection<? extends GrantedAuthority> authorities;
 
-    public static UserPrincipal create(UUID id, String role) {
+    public static UserPrincipal create(UUID id, String email, String role) {
         Role r = Role.valueOf(role);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
-        return new UserPrincipal(id, r, authorities);
+        return new UserPrincipal(id, email, r, authorities);
     }
 
     @Override public String getUsername() { return id.toString(); }

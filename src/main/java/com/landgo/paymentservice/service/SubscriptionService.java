@@ -42,7 +42,7 @@ public class SubscriptionService {
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         return planDetailRepository.findAll().stream()
                 .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
-                .filter(detail -> category == null || category.isBlank() || 
+                .filter(detail -> category == null || category.isBlank() ||
                         (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
                 .map(detail -> SubscriptionPlanResponse.builder()
                         .id(detail.getId().toString())
@@ -54,7 +54,8 @@ public class SubscriptionService {
                         .price(detail.getMonthlyPrice())
                         .billingPeriod("MONTHLY")
                         .currency(detail.getCurrency())
-                        .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures()) : java.util.Collections.emptyList())
+                        .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures())
+                                : java.util.Collections.emptyList())
                         .maxDuration(detail.getPlanType() == SubscriptionPlan.FREE ? 36500 : 30)
                         .isActive(true)
                         .isPopular(detail.isPopular())
@@ -65,21 +66,26 @@ public class SubscriptionService {
     }
 
     @Transactional
-    public Map<String, String> createSubscriptionIntent(UserPrincipal userPrincipal, ProfessionalSubscribeRequest request) {
-        return createSubscriptionIntent(userPrincipal.getId(), request);
+    public Map<String, String> createSubscriptionIntent(UserPrincipal userPrincipal,
+            ProfessionalSubscribeRequest request) {
+        return createSubscriptionIntent(userPrincipal.getId(), userPrincipal.getEmail(), request);
     }
 
     @Transactional
-    public Map<String, String> createSubscriptionIntent(UUID userId, ProfessionalSubscribeRequest request) {
+    public Map<String, String> createSubscriptionIntent(UUID userId, String email, ProfessionalSubscribeRequest request) {
         subscriptionRepository.findActiveByUserId(userId)
-                .ifPresent(sub -> { throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE"); });
+                .ifPresent(sub -> {
+                    throw new BadRequestException("User already has an active subscription",
+                            "SUBSCRIPTION_ALREADY_ACTIVE");
+                });
 
         SubscriptionPlan plan = resolvePlan(request);
         BillingCycle billingCycle = resolveBillingCycle(request);
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
                 .findByPlanTypeAndIsActiveTrue(plan)
-                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+                .orElseThrow(
+                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
 
         BigDecimal amount = billingCycle == BillingCycle.ANNUAL
                 ? detail.getAnnualPrice()
@@ -112,7 +118,7 @@ public class SubscriptionService {
         payment = paymentRepository.save(payment);
 
         try {
-            String customerId = stripeService.getOrCreateCustomer(userId);
+            String customerId = stripeService.getOrCreateCustomer(userId, email);
             long amountCent = amount.multiply(BigDecimal.valueOf(100)).longValue();
             com.stripe.model.PaymentIntent intent = stripeService.createPaymentIntent(
                     customerId, amountCent, detail.getCurrency().toLowerCase(), "Subscription for " + plan);
@@ -121,14 +127,14 @@ public class SubscriptionService {
             payment.setProviderTransactionId(intent.getId());
             paymentRepository.save(payment);
 
-            log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, plan, billingCycle, subscription.getId());
+            log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, plan,
+                    billingCycle, subscription.getId());
             return Map.of(
                     "paymentIntent", intent.getClientSecret(),
                     "customer", customerId,
                     "ephemeralKey", ephemeralKey,
                     "publishableKey", stripeService.getPublishableKey(),
-                    "subscriptionId", subscription.getId().toString()
-            );
+                    "subscriptionId", subscription.getId().toString());
         } catch (com.stripe.exception.StripeException e) {
             log.error("Failed to create Stripe PaymentIntent for subscription", e);
             throw new RuntimeException("Stripe error: " + e.getMessage());
@@ -176,21 +182,26 @@ public class SubscriptionService {
         subscriptionRepository.findActiveByUserId(userPrincipal.getId())
                 .ifPresent(sub -> {
                     log.warn("Subscription failed: User {} already has an active subscription", userPrincipal.getId());
-                    throw new BadRequestException("User already has an active subscription", "SUBSCRIPTION_ALREADY_ACTIVE");
+                    throw new BadRequestException("User already has an active subscription",
+                            "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
         SubscriptionPlan planType = resolvePlan(request);
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository.findByPlanTypeAndIsActiveTrue(planType)
-                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
+                .findByPlanTypeAndIsActiveTrue(planType)
+                .orElseThrow(
+                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
 
-        log.debug("Processing payment for user {} using method {}", userPrincipal.getId(), request.getPaymentMethodId());
+        log.debug("Processing payment for user {} using method {}", userPrincipal.getId(),
+                request.getPaymentMethodId());
 
         try {
             String customerId = stripeService.getOrCreateCustomer(userPrincipal);
             String stripeSubscriptionId = null;
 
             if (detail.getStripePriceId() != null && !detail.getStripePriceId().isBlank()) {
-                com.stripe.model.Subscription stripeSub = stripeService.createSubscription(customerId, detail.getStripePriceId());
+                com.stripe.model.Subscription stripeSub = stripeService.createSubscription(customerId,
+                        detail.getStripePriceId());
                 stripeSubscriptionId = stripeSub.getId();
             } else {
                 log.warn("No Stripe Price ID configured for plan {}, creating local-only subscription.", planType);
@@ -198,8 +209,9 @@ public class SubscriptionService {
 
             LocalDateTime now = LocalDateTime.now();
             int durationDays = planType == SubscriptionPlan.FREE ? 36500 : 30;
-            String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : request.getPaymentMethodId();
-            
+            String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod()
+                    : request.getPaymentMethodId();
+
             Subscription subscription = Subscription.builder()
                     .userId(userPrincipal.getId())
                     .plan(planType)
@@ -221,17 +233,20 @@ public class SubscriptionService {
             return subscriptionMapper.toResponse(subscription);
         } catch (Exception e) {
             log.error("Failed to create Stripe subscription", e);
-            throw new BadRequestException("Failed to process subscription payment: " + e.getMessage(), "PAYMENT_FAILED");
+            throw new BadRequestException("Failed to process subscription payment: " + e.getMessage(),
+                    "PAYMENT_FAILED");
         }
     }
 
     private SubscriptionPlan resolvePlan(SubscriptionRequest request) {
-        if (request.getPlan() != null) return request.getPlan();
+        if (request.getPlan() != null)
+            return request.getPlan();
         if (request.getPlanId() == null || request.getPlanId().isBlank()) {
             throw new BadRequestException("Subscription plan is required", "VALIDATION_ERROR");
         }
         String normalized = request.getPlanId().trim().toUpperCase();
-        if (normalized.startsWith("PLAN_")) normalized = normalized.substring(5);
+        if (normalized.startsWith("PLAN_"))
+            normalized = normalized.substring(5);
         return switch (normalized) {
             case "FREE" -> SubscriptionPlan.FREE;
             case "BASIC", "BASIC_LISTING" -> SubscriptionPlan.BASIC;
@@ -280,13 +295,16 @@ public class SubscriptionService {
                 .orElseThrow(() -> new ResourceNotFoundException("No active subscription found"));
         if (subscription.getPlan() == request.getPlan())
             throw new BadRequestException("You are already on this plan", "SUBSCRIPTION_SAME_PLAN");
-        
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository.findByPlanTypeAndIsActiveTrue(request.getPlan())
-                .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
+                .findByPlanTypeAndIsActiveTrue(request.getPlan())
+                .orElseThrow(
+                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
 
         subscription.setPlan(request.getPlan());
         subscription.setAmount(request.getBillingCycle() == BillingCycle.ANNUAL
-                ? detail.getAnnualPrice() : detail.getMonthlyPrice());
+                ? detail.getAnnualPrice()
+                : detail.getMonthlyPrice());
         subscription.setMaxVendorViewsPerMonth(detail.getMaxVendorViews());
         subscription.setMaxSavedLands(detail.getMaxSavedLands());
         subscription.setCanAccessPremiumListings(detail.isCanAccessPremium());
@@ -309,16 +327,19 @@ public class SubscriptionService {
         subscription.setEndDate(now.plusDays(durationDays));
 
         subscription = subscriptionRepository.save(subscription);
-        log.info("Plan changed for user {} to {} on {} cycle", userPrincipal.getId(), request.getPlan(), request.getBillingCycle());
+        log.info("Plan changed for user {} to {} on {} cycle", userPrincipal.getId(), request.getPlan(),
+                request.getBillingCycle());
         return subscriptionMapper.toResponse(subscription);
     }
 
     @Transactional
-    public void handleInvoicePaymentSucceeded(String stripeSubscriptionId, String stripeCustomerId, Long amountPaid, String currency, String paymentIntentId) {
+    public void handleInvoicePaymentSucceeded(String stripeSubscriptionId, String stripeCustomerId, Long amountPaid,
+            String currency, String paymentIntentId) {
         subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
                 .ifPresentOrElse(sub -> {
                     sub.setStatus(SubscriptionStatus.ACTIVE);
-                    // Extend end date by 30 days or 1 year based on some logic (or just use 30 for now as default)
+                    // Extend end date by 30 days or 1 year based on some logic (or just use 30 for
+                    // now as default)
                     // In a real app, we'd check the billing cycle from the subscription or invoice
                     if (sub.getEndDate() == null || sub.getEndDate().isBefore(LocalDateTime.now())) {
                         sub.setEndDate(LocalDateTime.now().plusDays(30));
@@ -330,7 +351,7 @@ public class SubscriptionService {
                     BigDecimal amount = amountPaid != null
                             ? BigDecimal.valueOf(amountPaid).divide(BigDecimal.valueOf(100))
                             : sub.getAmount();
-                    
+
                     Payment payment = Payment.builder()
                             .userId(sub.getUserId())
                             .amount(amount)
@@ -346,7 +367,8 @@ public class SubscriptionService {
     }
 
     @Transactional
-    public void handleInvoicePaymentFailed(String stripeSubscriptionId, Long amountDue, String currency, String paymentIntentId) {
+    public void handleInvoicePaymentFailed(String stripeSubscriptionId, Long amountDue, String currency,
+            String paymentIntentId) {
         subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
                 .ifPresent(sub -> {
                     // We don't necessarily cancel immediately, Stripe may retry
@@ -381,12 +403,14 @@ public class SubscriptionService {
                     sub.setCancellationReason("Cancelled via Stripe (deleted)");
                     sub.setAutoRenew(false);
                     subscriptionRepository.save(sub);
-                    log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(), sub.getUserId());
+                    log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(),
+                            sub.getUserId());
                 });
     }
 
     @Transactional
-    public com.landgo.paymentservice.entity.SubscriptionPlanDetail savePlanDetail(com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
+    public com.landgo.paymentservice.entity.SubscriptionPlanDetail savePlanDetail(
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
         log.info("Transaction BEGIN: Saving new plan detail: {}", plan.getName());
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail saved: {}", saved.getId());
@@ -402,11 +426,12 @@ public class SubscriptionService {
     }
 
     @Transactional
-    public com.landgo.paymentservice.entity.SubscriptionPlanDetail updatePlanDetail(UUID id, com.landgo.paymentservice.entity.SubscriptionPlanDetail updated) {
+    public com.landgo.paymentservice.entity.SubscriptionPlanDetail updatePlanDetail(UUID id,
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail updated) {
         log.info("Transaction BEGIN: Updating plan detail: {}", id);
         com.landgo.paymentservice.entity.SubscriptionPlanDetail plan = planDetailRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Subscription plan not found"));
-        
+
         plan.setName(updated.getName());
         plan.setDescription(updated.getDescription());
         plan.setMonthlyPrice(updated.getMonthlyPrice());
@@ -418,7 +443,7 @@ public class SubscriptionService {
         plan.setCanAccessPremium(updated.isCanAccessPremium());
         plan.setCanContactVendor(updated.isCanContactVendor());
         plan.setPopular(updated.isPopular());
-        
+
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail updated: {}", id);
         return saved;
@@ -436,7 +461,8 @@ public class SubscriptionService {
     @Transactional(readOnly = true)
     public void validateActiveSubscription(UserPrincipal userPrincipal) {
         subscriptionRepository.findActiveByUserId(userPrincipal.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("No active subscription found. Please subscribe to a plan first."));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No active subscription found. Please subscribe to a plan first."));
     }
 
     @Scheduled(cron = "0 0 0 * * *")

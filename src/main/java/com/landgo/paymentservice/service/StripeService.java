@@ -32,18 +32,20 @@ public class StripeService {
      * Retrieves an existing Stripe Customer or creates a new one for the user.
      */
     public String getOrCreateCustomer(UserPrincipal userPrincipal) throws StripeException {
-        return getOrCreateCustomer(userPrincipal.getId());
+        return getOrCreateCustomer(userPrincipal.getId(), userPrincipal.getEmail());
     }
 
-    public String getOrCreateCustomer(UUID userId) throws StripeException {
+    public String getOrCreateCustomer(UUID userId, String email) throws StripeException {
         Optional<BillingProfile> profileOpt = billingProfileRepository.findByUserId(userId);
 
         if (profileOpt.isPresent()) {
             return profileOpt.get().getStripeCustomerId();
         }
 
+        String stripeEmail = (email != null && !email.isBlank()) ? email : "user_" + userId + "@example.com";
+        
         CustomerCreateParams params = CustomerCreateParams.builder()
-                .setEmail("user_" + userId + "@example.com") // Dummy email since UserPrincipal doesn't store it
+                .setEmail(stripeEmail)
                 .setName("User " + userId)
                 .putMetadata("userId", userId.toString())
                 .build();

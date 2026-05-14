@@ -29,6 +29,11 @@ public class JwtTokenProvider {
         return (String) claims.get("role");
     }
 
+    public String getEmailFromToken(String token) {
+        Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        return (String) claims.get("email");
+    }
+
     public boolean validateToken(String token) {
         try { Jwts.parser().verifyWith(key).build().parseSignedClaims(token); return true; }
         catch (MalformedJwtException ex) { log.error("Invalid JWT token"); }
