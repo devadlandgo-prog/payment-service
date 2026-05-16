@@ -434,9 +434,9 @@ public class SubscriptionService {
 
         if (existingPlan.isPresent()) {
             throw new ConflictException(
-                    "A plan with type '" + plan.getPlanType() + "' already exists for category '" + normalizedCategory
-                            + "'.",
-                    "PLAN_TYPE_ALREADY_EXISTS");
+                    "Plan tier " + plan.getPlanType() + " already exists for type " + normalizedCategory
+                            + ". Use PUT /subscriptions/plans/{id} to update or choose another tier.",
+                    "PLAN_TIER_TYPE_CONFLICT");
         }
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
@@ -472,9 +472,9 @@ public class SubscriptionService {
                         .filter(existing -> !existing.getId().equals(plan.getId()))
                         .ifPresent(existing -> {
                             throw new ConflictException(
-                                    "A plan with type '" + plan.getPlanType() + "' already exists for category '"
-                                            + normalizedCategory + "'.",
-                                    "PLAN_TYPE_ALREADY_EXISTS");
+                                    "Plan tier " + plan.getPlanType() + " already exists for type "
+                                            + normalizedCategory + ". Use PUT /subscriptions/plans/{id} to update or choose another tier.",
+                                    "PLAN_TIER_TYPE_CONFLICT");
                         });
                 plan.setPlanCategory(normalizedCategory);
             }
