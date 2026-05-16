@@ -6,6 +6,7 @@ import lombok.*;
 public class SubscriptionRequest {
     private String plan;
     private String planId;
+    private String planCategory;
     private String paymentMethod;
     private String paymentMethodId;
     private String paymentToken;

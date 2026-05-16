@@ -39,8 +39,8 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE TABLE IF NOT EXISTS subscription_plan_details (
   id UUID PRIMARY KEY,
-  plan_type VARCHAR(50) NOT NULL UNIQUE,
-  plan_category VARCHAR(50),
+  plan_type VARCHAR(50) NOT NULL,
+  plan_category VARCHAR(50) NOT NULL,
   name VARCHAR(255) NOT NULL,
   description TEXT,
   monthly_price DECIMAL(15,2) NOT NULL,

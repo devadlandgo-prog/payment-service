@@ -31,3 +31,14 @@ databaseChangeLog:
         - sqlFile:
             path: ../ddl/003_add_user_email_to_payments.sql
             relativeToChangelogFile: true
+
+  - changeSet:
+      id: payments-v1-0-1-ddl-update-subscription-plan-uniqueness
+      author: landgo
+      runOnChange: false
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/004_update_subscription_plan_uniqueness.sql
+            relativeToChangelogFile: true

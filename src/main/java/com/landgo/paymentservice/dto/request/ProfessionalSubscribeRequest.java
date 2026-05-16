@@ -8,6 +8,7 @@ public class ProfessionalSubscribeRequest {
     private String plan;
     private BillingCycle billingCycle;
     private String planId;
+    private String planCategory;
     private String subscriptionType;
     private String paymentMethodId;
     private String email;

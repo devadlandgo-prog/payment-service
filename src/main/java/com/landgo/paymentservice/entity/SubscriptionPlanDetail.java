@@ -8,7 +8,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Entity
-@Table(name = "subscription_plan_details")
+@Table(
+        name = "subscription_plan_details",
+        uniqueConstraints = @UniqueConstraint(
+                name = "subscription_plan_details_plan_type_category_key",
+                columnNames = {"plan_type", "plan_category"}))
 @Getter
 @Setter
 @SuperBuilder
@@ -16,7 +20,7 @@ import java.util.List;
 @AllArgsConstructor
 public class SubscriptionPlanDetail extends BaseEntity {
 
-    @Column(name = "plan_type", nullable = false, unique = true, length = 50)
+    @Column(name = "plan_type", nullable = false, length = 50)
     private String planType;
 
     @Column(name = "name", nullable = false)

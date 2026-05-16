@@ -12,6 +12,7 @@ import com.landgo.paymentservice.enums.PaymentStatus;
 import com.landgo.paymentservice.enums.SubscriptionStatus;
 import com.landgo.paymentservice.exception.BadRequestException;
 import com.landgo.paymentservice.exception.ResourceNotFoundException;
+import com.landgo.paymentservice.exception.ConflictException;
 import com.landgo.paymentservice.mapper.SubscriptionMapper;
 import com.landgo.paymentservice.repository.SubscriptionRepository;
 import com.landgo.paymentservice.repository.PaymentRepository;
@@ -41,8 +42,8 @@ public class SubscriptionService {
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         return planDetailRepository.findAll().stream()
                 .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
-                .filter(detail -> category == null || category.isBlank() ||
-                        (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
+                .filter(detail -> category == null || category.isBlank()
+                        || (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
                 .map(detail -> SubscriptionPlanResponse.builder()
                         .id(detail.getId().toString())
                         .planType(detail.getPlanType().toLowerCase())
@@ -85,16 +86,12 @@ public class SubscriptionService {
                             "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
-        String plan = request.getPlan() != null ? request.getPlan() : request.getPlanId();
-        if (plan == null || plan.isBlank()) {
-            throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
-        }
         BillingCycle billingCycle = resolveBillingCycle(request);
 
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
-                .findByPlanTypeAndIsActiveTrue(plan)
-                .orElseThrow(
-                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
+                request.getPlanId(), request.getPlan(), request.getPlanCategory());
+
+        String planType = detail.getPlanType();
 
         BigDecimal amount = billingCycle == BillingCycle.ANNUAL
                 ? detail.getAnnualPrice()
@@ -102,8 +99,8 @@ public class SubscriptionService {
 
         Subscription subscription = Subscription.builder()
                 .userId(userId)
-                .plan(plan)
-                .status("free".equalsIgnoreCase(plan) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
+                .plan(planType)
+                .status("free".equalsIgnoreCase(planType) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
                 .startDate(LocalDateTime.now())
                 .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
                 .amount(amount)
@@ -121,7 +118,7 @@ public class SubscriptionService {
                 .amount(amount)
                 .currency(detail.getCurrency())
                 .status(PaymentStatus.PENDING)
-                .description("Subscription intent for " + plan)
+                .description("Subscription intent for " + planType)
                 .provider("STRIPE")
                 .subscription(subscription)
                 .build();
@@ -131,13 +128,13 @@ public class SubscriptionService {
             String customerId = stripeService.getOrCreateCustomer(userId, email);
             long amountCent = amount.multiply(BigDecimal.valueOf(100)).longValue();
             com.stripe.model.PaymentIntent intent = stripeService.createPaymentIntent(
-                    customerId, amountCent, detail.getCurrency().toLowerCase(), "Subscription for " + plan);
+                    customerId, amountCent, detail.getCurrency().toLowerCase(), "Subscription for " + planType);
             String ephemeralKey = stripeService.getEphemeralKey(customerId);
 
             payment.setProviderTransactionId(intent.getId());
             paymentRepository.save(payment);
 
-            log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, plan,
+            log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, planType,
                     billingCycle, subscription.getId());
             return Map.of(
                     "paymentIntent", intent.getClientSecret(),
@@ -177,15 +174,10 @@ public class SubscriptionService {
                             "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
-        String planType = request.getPlan() != null ? request.getPlan() : request.getPlanId();
-        if (planType == null || planType.isBlank()) {
-            throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
-        }
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
+                request.getPlanId(), request.getPlan(), request.getPlanCategory());
 
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
-                .findByPlanTypeAndIsActiveTrue(planType)
-                .orElseThrow(
-                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+        String planType = detail.getPlanType();
 
         log.debug("Processing payment for user {} using method {}", userPrincipal.getId(),
                 request.getPaymentMethodId());
@@ -241,6 +233,46 @@ public class SubscriptionService {
         return subscriptionMapper.toResponse(subscription);
     }
 
+    private com.landgo.paymentservice.entity.SubscriptionPlanDetail resolvePlanDetail(
+            String planId,
+            String planType,
+            String category) {
+        if (planId != null && !planId.isBlank()) {
+            try {
+                return planDetailRepository.findByIdAndIsActiveTrue(java.util.UUID.fromString(planId))
+                        .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan",
+                                "VALIDATION_ERROR"));
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("planId must be a valid UUID", "VALIDATION_ERROR");
+            }
+        }
+
+        if (planType == null || planType.isBlank()) {
+            throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
+        }
+
+        if (category != null && !category.isBlank()) {
+            String normalizedCategory = category.trim().toLowerCase();
+            return planDetailRepository.findByPlanTypeAndPlanCategoryAndIsActiveTrue(planType, normalizedCategory)
+                    .orElseThrow(() -> new BadRequestException(
+                            "No active plan found for type '" + planType + "' and category '" + category + "'",
+                            "VALIDATION_ERROR"));
+        }
+
+        List<com.landgo.paymentservice.entity.SubscriptionPlanDetail> matches = planDetailRepository
+                .findAllByPlanTypeAndIsActiveTrue(planType);
+        if (matches.isEmpty()) {
+            throw new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR");
+        }
+        if (matches.size() > 1) {
+            throw new BadRequestException(
+                    "Multiple active plans exist for plan type '" + planType
+                            + "'. Provide planId or planCategory to disambiguate.",
+                    "PLAN_SELECTION_AMBIGUOUS");
+        }
+        return matches.get(0);
+    }
+
     @Transactional
     public void cancelSubscription(UserPrincipal userPrincipal, String reason) {
         log.info("Request to cancel subscription for user: {}. Reason: {}", userPrincipal.getId(), reason);
@@ -271,15 +303,14 @@ public class SubscriptionService {
     public SubscriptionResponse changePlan(UserPrincipal userPrincipal, ChangeSubscriptionRequest request) {
         Subscription subscription = subscriptionRepository.findActiveByUserId(userPrincipal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No active subscription found"));
-        if (subscription.getPlan() == request.getPlan())
+        if (subscription.getPlan() != null && request.getPlan() != null
+                && subscription.getPlan().equalsIgnoreCase(request.getPlan()))
             throw new BadRequestException("You are already on this plan", "SUBSCRIPTION_SAME_PLAN");
 
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
-                .findByPlanTypeAndIsActiveTrue(request.getPlan())
-                .orElseThrow(
-                        () -> new BadRequestException("Invalid or inactive subscription plan", "VALIDATION_ERROR"));
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
+                request.getPlanId(), request.getPlan(), request.getPlanCategory());
 
-        subscription.setPlan(request.getPlan());
+        subscription.setPlan(detail.getPlanType());
         subscription.setAmount(request.getBillingCycle() == BillingCycle.ANNUAL
                 ? detail.getAnnualPrice()
                 : detail.getMonthlyPrice());
@@ -391,13 +422,20 @@ public class SubscriptionService {
             com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
         log.info("Transaction BEGIN: Saving new plan detail: {}", plan.getName());
 
-        // Check if a plan with this plan_type already exists
-        Optional<com.landgo.paymentservice.entity.SubscriptionPlanDetail> existingPlan =
-                planDetailRepository.findByPlanType(plan.getPlanType());
+        String normalizedCategory = plan.getPlanCategory() != null ? plan.getPlanCategory().trim().toLowerCase() : null;
+        if (normalizedCategory == null || normalizedCategory.isBlank()) {
+            throw new BadRequestException("Plan category (type) is required", "VALIDATION_ERROR");
+        }
+        plan.setPlanCategory(normalizedCategory);
+
+        // Check if a plan with this plan_type/type already exists
+        Optional<com.landgo.paymentservice.entity.SubscriptionPlanDetail> existingPlan = planDetailRepository
+                .findByPlanTypeAndPlanCategory(plan.getPlanType(), normalizedCategory);
 
         if (existingPlan.isPresent()) {
-            throw new BadRequestException(
-                    "A plan with type '" + plan.getPlanType() + "' already exists. Use the update endpoint instead.",
+            throw new ConflictException(
+                    "A plan with type '" + plan.getPlanType() + "' already exists for category '" + normalizedCategory
+                            + "'.",
                     "PLAN_TYPE_ALREADY_EXISTS");
         }
 
@@ -427,6 +465,20 @@ public class SubscriptionService {
         plan.setAnnualPrice(updated.getAnnualPrice());
         plan.setCurrency(updated.getCurrency());
         plan.setFeatures(updated.getFeatures());
+        if (updated.getPlanCategory() != null && !updated.getPlanCategory().isBlank()) {
+            String normalizedCategory = updated.getPlanCategory().trim().toLowerCase();
+            if (!Objects.equals(plan.getPlanCategory(), normalizedCategory)) {
+                planDetailRepository.findByPlanTypeAndPlanCategory(plan.getPlanType(), normalizedCategory)
+                        .filter(existing -> !existing.getId().equals(plan.getId()))
+                        .ifPresent(existing -> {
+                            throw new ConflictException(
+                                    "A plan with type '" + plan.getPlanType() + "' already exists for category '"
+                                            + normalizedCategory + "'.",
+                                    "PLAN_TYPE_ALREADY_EXISTS");
+                        });
+                plan.setPlanCategory(normalizedCategory);
+            }
+        }
         if (updated.getMaxVendorViews() != null) {
             plan.setMaxVendorViews(updated.getMaxVendorViews());
         }
