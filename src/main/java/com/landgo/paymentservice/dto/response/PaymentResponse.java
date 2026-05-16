@@ -10,6 +10,7 @@ import java.util.UUID;
 public class PaymentResponse {
     private UUID id;
     private UUID userId;
+    private String userEmail;
     private BigDecimal amount;
     private String currency;
     private PaymentStatus status;

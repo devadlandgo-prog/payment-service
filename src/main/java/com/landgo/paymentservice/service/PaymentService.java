@@ -81,9 +81,34 @@ public class PaymentService {
 
     private PaymentResponse toResponse(Payment payment) {
         return PaymentResponse.builder()
-                .id(payment.getId()).userId(payment.getUserId()).amount(payment.getAmount())
+                .id(payment.getId()).userId(payment.getUserId()).userEmail(payment.getUserEmail())
+                .amount(payment.getAmount())
                 .currency(payment.getCurrency()).status(payment.getStatus()).description(payment.getDescription())
                 .provider(payment.getProvider()).providerTransactionId(payment.getProviderTransactionId())
                 .createdAt(payment.getCreatedAt()).build();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getAllPayments(Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAllPayments(pageable);
+        return toPageResponse(page);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getAllPaymentsByStatus(PaymentStatus status, Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAllByStatus(status, pageable);
+        return toPageResponse(page);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getAllPaymentsByProvider(String provider, Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAllByProvider(provider, pageable);
+        return toPageResponse(page);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getAllPaymentsByStatusAndProvider(PaymentStatus status, String provider, Pageable pageable) {
+        Page<Payment> page = paymentRepository.findAllByStatusAndProvider(status, provider, pageable);
+        return toPageResponse(page);
     }
 }

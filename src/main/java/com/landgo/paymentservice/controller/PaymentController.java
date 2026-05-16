@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import com.landgo.paymentservice.service.StripeService;
@@ -109,5 +110,29 @@ public class PaymentController {
             return ResponseEntity.status(500).body(ApiResponse.error(
                     "Failed to verify payment: " + e.getMessage(), "STRIPE_ERROR"));
         }
+    }
+
+    @GetMapping("/admin/transactions")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Get all transactions (Admin only)")
+    public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> getAllTransactions(
+            @RequestParam(required = false) PaymentStatus status,
+            @RequestParam(required = false) String provider,
+            @PageableDefault(size = 50) Pageable pageable) {
+        log.info("Admin fetching all transactions status={} provider={} page={} size={}",
+                status, provider, pageable.getPageNumber(), pageable.getPageSize());
+
+        PageResponse<PaymentResponse> response;
+        if (status != null && provider != null) {
+            response = paymentService.getAllPaymentsByStatusAndProvider(status, provider, pageable);
+        } else if (status != null) {
+            response = paymentService.getAllPaymentsByStatus(status, pageable);
+        } else if (provider != null) {
+            response = paymentService.getAllPaymentsByProvider(provider, pageable);
+        } else {
+            response = paymentService.getAllPayments(pageable);
+        }
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

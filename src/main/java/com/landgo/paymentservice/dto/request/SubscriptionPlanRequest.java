@@ -9,8 +9,8 @@ import java.util.List;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubscriptionPlanRequest {
-    @NotNull
-    private com.landgo.paymentservice.enums.SubscriptionPlan planType;
+    @NotBlank
+    private String planType;
 
     @NotBlank(message = "Plan name is required")
     private String name;

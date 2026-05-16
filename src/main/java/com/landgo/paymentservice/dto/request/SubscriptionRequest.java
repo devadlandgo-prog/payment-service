@@ -1,11 +1,10 @@
 package com.landgo.paymentservice.dto.request;
 
-import com.landgo.paymentservice.enums.SubscriptionPlan;
 import lombok.*;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class SubscriptionRequest {
-    private SubscriptionPlan plan;
+    private String plan;
     private String planId;
     private String paymentMethod;
     private String paymentMethodId;

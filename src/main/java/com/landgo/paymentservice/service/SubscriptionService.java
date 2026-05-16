@@ -9,7 +9,6 @@ import com.landgo.paymentservice.entity.Subscription;
 import com.landgo.paymentservice.entity.Payment;
 import com.landgo.paymentservice.enums.BillingCycle;
 import com.landgo.paymentservice.enums.PaymentStatus;
-import com.landgo.paymentservice.enums.SubscriptionPlan;
 import com.landgo.paymentservice.enums.SubscriptionStatus;
 import com.landgo.paymentservice.exception.BadRequestException;
 import com.landgo.paymentservice.exception.ResourceNotFoundException;
@@ -46,7 +45,7 @@ public class SubscriptionService {
                         (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
                 .map(detail -> SubscriptionPlanResponse.builder()
                         .id(detail.getId().toString())
-                        .planType(detail.getPlanType().name().toLowerCase())
+                        .planType(detail.getPlanType().toLowerCase())
                         .name(detail.getName())
                         .description(detail.getDescription())
                         .monthlyPrice(detail.getMonthlyPrice())
@@ -56,7 +55,7 @@ public class SubscriptionService {
                         .currency(detail.getCurrency())
                         .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures())
                                 : java.util.Collections.emptyList())
-                        .maxDuration(detail.getPlanType() == SubscriptionPlan.FREE ? 36500 : 30)
+                        .maxDuration("free".equalsIgnoreCase(detail.getPlanType()) ? 36500 : 30)
                         .isActive(true)
                         .isPopular(detail.isPopular())
                         .stripeProductId(detail.getStripeProductId())
@@ -81,7 +80,10 @@ public class SubscriptionService {
                             "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
-        SubscriptionPlan plan = resolvePlan(request);
+        String plan = request.getPlan() != null ? request.getPlan() : request.getPlanId();
+        if (plan == null || plan.isBlank()) {
+            throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
+        }
         BillingCycle billingCycle = resolveBillingCycle(request);
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
@@ -96,7 +98,7 @@ public class SubscriptionService {
         Subscription subscription = Subscription.builder()
                 .userId(userId)
                 .plan(plan)
-                .status(plan == SubscriptionPlan.FREE ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
+                .status("free".equalsIgnoreCase(plan) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
                 .startDate(LocalDateTime.now())
                 .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
                 .amount(amount)
@@ -110,6 +112,7 @@ public class SubscriptionService {
 
         Payment payment = Payment.builder()
                 .userId(userId)
+                .userEmail(email)
                 .amount(amount)
                 .currency(detail.getCurrency())
                 .status(PaymentStatus.PENDING)
@@ -143,25 +146,6 @@ public class SubscriptionService {
         }
     }
 
-    private SubscriptionPlan resolvePlan(ProfessionalSubscribeRequest request) {
-        if (request.getPlan() != null) {
-            return request.getPlan();
-        }
-        if (request.getPlanId() == null || request.getPlanId().isBlank()) {
-            throw new BadRequestException("planId is required", "VALIDATION_ERROR");
-        }
-        String normalized = request.getPlanId().trim().toUpperCase();
-        if (normalized.startsWith("PLAN_")) {
-            normalized = normalized.substring(5);
-        }
-        return switch (normalized) {
-            case "FREE" -> SubscriptionPlan.FREE;
-            case "BASIC", "BASIC_LISTING" -> SubscriptionPlan.BASIC;
-            case "PREMIUM", "PROFESSIONAL" -> SubscriptionPlan.PREMIUM;
-            case "ENTERPRISE" -> SubscriptionPlan.ENTERPRISE;
-            default -> throw new BadRequestException("Invalid planId", "VALIDATION_ERROR");
-        };
-    }
 
     private BillingCycle resolveBillingCycle(ProfessionalSubscribeRequest request) {
         if (request.getBillingCycle() != null) {
@@ -188,7 +172,11 @@ public class SubscriptionService {
                             "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
-        SubscriptionPlan planType = resolvePlan(request);
+        String planType = request.getPlan() != null ? request.getPlan() : request.getPlanId();
+        if (planType == null || planType.isBlank()) {
+            throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
+        }
+
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
                 .findByPlanTypeAndIsActiveTrue(planType)
                 .orElseThrow(
@@ -210,7 +198,7 @@ public class SubscriptionService {
             }
 
             LocalDateTime now = LocalDateTime.now();
-            int durationDays = planType == SubscriptionPlan.FREE ? 36500 : 30;
+            int durationDays = "free".equalsIgnoreCase(planType) ? 36500 : 30;
             String paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod()
                     : request.getPaymentMethodId();
 
@@ -240,23 +228,6 @@ public class SubscriptionService {
         }
     }
 
-    private SubscriptionPlan resolvePlan(SubscriptionRequest request) {
-        if (request.getPlan() != null)
-            return request.getPlan();
-        if (request.getPlanId() == null || request.getPlanId().isBlank()) {
-            throw new BadRequestException("Subscription plan is required", "VALIDATION_ERROR");
-        }
-        String normalized = request.getPlanId().trim().toUpperCase();
-        if (normalized.startsWith("PLAN_"))
-            normalized = normalized.substring(5);
-        return switch (normalized) {
-            case "FREE" -> SubscriptionPlan.FREE;
-            case "BASIC", "BASIC_LISTING" -> SubscriptionPlan.BASIC;
-            case "PREMIUM", "PROFESSIONAL" -> SubscriptionPlan.PREMIUM;
-            case "ENTERPRISE" -> SubscriptionPlan.ENTERPRISE;
-            default -> throw new BadRequestException("Invalid planId", "VALIDATION_ERROR");
-        };
-    }
 
     @Transactional(readOnly = true)
     public SubscriptionResponse getCurrentSubscription(UserPrincipal userPrincipal) {
@@ -414,6 +385,17 @@ public class SubscriptionService {
     public com.landgo.paymentservice.entity.SubscriptionPlanDetail savePlanDetail(
             com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
         log.info("Transaction BEGIN: Saving new plan detail: {}", plan.getName());
+
+        // Check if a plan with this plan_type already exists
+        Optional<com.landgo.paymentservice.entity.SubscriptionPlanDetail> existingPlan =
+                planDetailRepository.findByPlanType(plan.getPlanType());
+
+        if (existingPlan.isPresent()) {
+            throw new BadRequestException(
+                    "A plan with type '" + plan.getPlanType() + "' already exists. Use the update endpoint instead.",
+                    "PLAN_TYPE_ALREADY_EXISTS");
+        }
+
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail saved: {}", saved.getId());
         return saved;

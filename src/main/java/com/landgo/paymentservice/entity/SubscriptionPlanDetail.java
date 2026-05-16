@@ -1,6 +1,5 @@
 package com.landgo.paymentservice.entity;
 
-import com.landgo.paymentservice.enums.SubscriptionPlan;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -17,9 +16,8 @@ import java.util.List;
 @AllArgsConstructor
 public class SubscriptionPlanDetail extends BaseEntity {
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "plan_type", nullable = false, unique = true)
-    private SubscriptionPlan planType;
+    @Column(name = "plan_type", nullable = false, unique = true, length = 50)
+    private String planType;
 
     @Column(name = "name", nullable = false)
     private String name;

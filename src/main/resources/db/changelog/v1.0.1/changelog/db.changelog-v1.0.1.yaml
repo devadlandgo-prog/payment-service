@@ -20,3 +20,14 @@ databaseChangeLog:
         - sqlFile:
             path: ../ddl/002_set_notnull_billing_profiles_timestamps.sql
             relativeToChangelogFile: true
+
+  - changeSet:
+      id: payments-v1-0-1-ddl-add-user-email-to-payments
+      author: landgo
+      runOnChange: false
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/003_add_user_email_to_payments.sql
+            relativeToChangelogFile: true

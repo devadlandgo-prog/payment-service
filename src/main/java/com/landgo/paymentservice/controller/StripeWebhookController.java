@@ -1,10 +1,5 @@
 package com.landgo.paymentservice.controller;
 
-import com.landgo.paymentservice.entity.BillingProfile;
-import com.landgo.paymentservice.entity.Payment;
-import com.landgo.paymentservice.entity.Subscription;
-import com.landgo.paymentservice.enums.PaymentStatus;
-import com.landgo.paymentservice.enums.SubscriptionStatus;
 import com.landgo.paymentservice.service.SubscriptionService;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Event;
@@ -23,11 +18,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.Optional;
-import java.util.UUID;
-
 @Slf4j
 @RestController
 @RequestMapping("/payment/webhook")
@@ -42,12 +32,7 @@ public class StripeWebhookController {
     @PostMapping
     public ResponseEntity<String> handleStripeEvent(
             @RequestBody String payload,
-            @RequestHeader(value = "Stripe-Signature", required = false) String sigHeader) {
-        
-        if (sigHeader == null || sigHeader.isBlank()) {
-            log.warn("Missing Stripe-Signature header");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Missing signature");
-        }
+            @RequestHeader("Stripe-Signature") String sigHeader) {
 
         Event event;
         try {
@@ -64,12 +49,12 @@ public class StripeWebhookController {
         StripeObject stripeObject = deserializer.getObject().orElse(null);
         if (stripeObject == null) {
             log.warn("Deserialization failed for event {} — possible API version mismatch", event.getType());
-            return ResponseEntity.ok("Success");
+            return ResponseEntity.ok("Success (but deserialization failed)");
         }
 
         switch (event.getType()) {
             case "invoice.payment_succeeded" -> handleInvoicePaymentSucceeded(stripeObject);
-            case "invoice.payment_failed"    -> handleInvoicePaymentFailed(stripeObject);
+            case "invoice.payment_failed" -> handleInvoicePaymentFailed(stripeObject);
             case "customer.subscription.deleted" -> handleSubscriptionDeleted(stripeObject);
             default -> log.info("Unhandled Stripe event type: {}", event.getType());
         }
@@ -78,7 +63,8 @@ public class StripeWebhookController {
     }
 
     private void handleInvoicePaymentSucceeded(StripeObject stripeObject) {
-        if (!(stripeObject instanceof Invoice invoice)) return;
+        if (!(stripeObject instanceof Invoice invoice))
+            return;
 
         String stripeSubscriptionId = invoice.getSubscription();
         String stripeCustomerId = invoice.getCustomer();
@@ -88,12 +74,14 @@ public class StripeWebhookController {
 
         log.info("Webhook invoice.payment_succeeded: subId={} amountPaid={}", stripeSubscriptionId, amountPaid);
         if (stripeSubscriptionId != null) {
-            subscriptionService.handleInvoicePaymentSucceeded(stripeSubscriptionId, stripeCustomerId, amountPaid, currency, paymentIntentId);
+            subscriptionService.handleInvoicePaymentSucceeded(stripeSubscriptionId, stripeCustomerId, amountPaid,
+                    currency, paymentIntentId);
         }
     }
 
     private void handleInvoicePaymentFailed(StripeObject stripeObject) {
-        if (!(stripeObject instanceof Invoice invoice)) return;
+        if (!(stripeObject instanceof Invoice invoice))
+            return;
 
         String stripeSubscriptionId = invoice.getSubscription();
         Long amountDue = invoice.getAmountDue();
@@ -107,7 +95,8 @@ public class StripeWebhookController {
     }
 
     private void handleSubscriptionDeleted(StripeObject stripeObject) {
-        if (!(stripeObject instanceof com.stripe.model.Subscription stripeSub)) return;
+        if (!(stripeObject instanceof com.stripe.model.Subscription stripeSub))
+            return;
 
         String stripeSubscriptionId = stripeSub.getId();
         log.info("Webhook customer.subscription.deleted: subId={}", stripeSubscriptionId);

@@ -1,6 +1,5 @@
 package com.landgo.paymentservice.entity;
 
-import com.landgo.paymentservice.enums.SubscriptionPlan;
 import com.landgo.paymentservice.enums.SubscriptionStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -13,7 +12,7 @@ import java.util.UUID;
 @Getter @Setter @SuperBuilder @NoArgsConstructor @AllArgsConstructor
 public class Subscription extends BaseEntity {
     @Column(name = "user_id", nullable = false) private UUID userId;
-    @Enumerated(EnumType.STRING) @Column(name = "plan", nullable = false, length = 50) private SubscriptionPlan plan;
+    @Column(name = "plan", nullable = false, length = 50) private String plan;
     @Enumerated(EnumType.STRING) @Column(name = "status", nullable = false, length = 50) @Builder.Default private SubscriptionStatus status = SubscriptionStatus.PENDING;
     @Column(name = "start_date", nullable = false) private LocalDateTime startDate;
     @Column(name = "end_date", nullable = false) private LocalDateTime endDate;

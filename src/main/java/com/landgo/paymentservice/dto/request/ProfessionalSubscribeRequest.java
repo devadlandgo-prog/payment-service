@@ -1,12 +1,11 @@
 package com.landgo.paymentservice.dto.request;
 
 import com.landgo.paymentservice.enums.BillingCycle;
-import com.landgo.paymentservice.enums.SubscriptionPlan;
 import lombok.*;
 
 @Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class ProfessionalSubscribeRequest {
-    private SubscriptionPlan plan;
+    private String plan;
     private BillingCycle billingCycle;
     private String planId;
     private String subscriptionType;
