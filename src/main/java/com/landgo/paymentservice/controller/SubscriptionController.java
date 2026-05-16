@@ -106,6 +106,7 @@ public class SubscriptionController {
                 .canAccessPremium(request.isCanAccessPremium())
                 .canContactVendor(request.isCanContactVendor())
                 .isPopular(request.isPopular())
+                .planCategory(request.getType())
                 .isActive(true)
                 .build();
         return ResponseEntity.ok(ApiResponse.success("Plan created successfully", subscriptionService.savePlanDetail(plan)));
@@ -129,6 +130,7 @@ public class SubscriptionController {
                 .canAccessPremium(request.isCanAccessPremium())
                 .canContactVendor(request.isCanContactVendor())
                 .isPopular(request.isPopular())
+                .planCategory(request.getType())
                 .build();
         return ResponseEntity.ok(ApiResponse.success("Plan updated successfully", subscriptionService.updatePlanDetail(id, updated)));
     }
