@@ -103,9 +103,9 @@ public class SubscriptionController {
                 .features(request.getFeatures())
                 .maxVendorViews(request.getMaxVendorViews())
                 .maxSavedLands(request.getMaxSavedLands())
-                .canAccessPremium(request.isCanAccessPremium())
-                .canContactVendor(request.isCanContactVendor())
-                .isPopular(request.isPopular())
+                .canAccessPremium(request.getCanAccessPremium())
+                .canContactVendor(request.getCanContactVendor())
+                .popular(request.getPopular())
                 .planCategory(request.getType())
                 .isActive(true)
                 .build();
@@ -127,9 +127,9 @@ public class SubscriptionController {
                 .features(request.getFeatures())
                 .maxVendorViews(request.getMaxVendorViews())
                 .maxSavedLands(request.getMaxSavedLands())
-                .canAccessPremium(request.isCanAccessPremium())
-                .canContactVendor(request.isCanContactVendor())
-                .isPopular(request.isPopular())
+                .canAccessPremium(request.getCanAccessPremium())
+                .canContactVendor(request.getCanContactVendor())
+                .popular(request.getPopular())
                 .planCategory(request.getType())
                 .build();
         return ResponseEntity.ok(ApiResponse.success("Plan updated successfully", subscriptionService.updatePlanDetail(id, updated)));

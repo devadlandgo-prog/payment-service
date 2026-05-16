@@ -29,11 +29,11 @@ public class SubscriptionPlanRequest {
 
     private List<String> features;
 
-    private int maxVendorViews;
-    private int maxSavedLands;
-    private boolean canAccessPremium;
-    private boolean canContactVendor;
-    private boolean isPopular;
+    private Integer maxVendorViews;
+    private Integer maxSavedLands;
+    private Boolean canAccessPremium;
+    private Boolean canContactVendor;
+    private Boolean popular;
 
     /** market_profession | land_listing */
     @NotBlank

@@ -16,10 +16,15 @@ public class SubscriptionPlanResponse {
     private BigDecimal annualPrice;
     private String currency;
     private List<String> features;
+    private Integer maxVendorViews;
+    private Integer maxSavedLands;
+    private Boolean canAccessPremium;
+    private Boolean canContactVendor;
+    private Boolean popular;
+    private String type;
     private Integer maxListings;
     private Integer maxDuration;
     private Boolean isActive;
-    private boolean isPopular;
     private String stripeProductId;
     private String stripePriceId;
 }

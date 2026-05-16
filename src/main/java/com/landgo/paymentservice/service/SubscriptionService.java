@@ -55,9 +55,14 @@ public class SubscriptionService {
                         .currency(detail.getCurrency())
                         .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures())
                                 : java.util.Collections.emptyList())
+                        .maxVendorViews(detail.getMaxVendorViews())
+                        .maxSavedLands(detail.getMaxSavedLands())
+                        .canAccessPremium(detail.getCanAccessPremium())
+                        .canContactVendor(detail.getCanContactVendor())
+                        .popular(detail.getPopular())
+                        .type(detail.getPlanCategory())
                         .maxDuration("free".equalsIgnoreCase(detail.getPlanType()) ? 36500 : 30)
                         .isActive(true)
-                        .isPopular(detail.isPopular())
                         .stripeProductId(detail.getStripeProductId())
                         .stripePriceId(detail.getStripePriceId())
                         .build())
@@ -105,8 +110,8 @@ public class SubscriptionService {
                 .autoRenew(true)
                 .maxVendorViewsPerMonth(detail.getMaxVendorViews())
                 .maxSavedLands(detail.getMaxSavedLands())
-                .canAccessPremiumListings(detail.isCanAccessPremium())
-                .canContactVendorDirectly(detail.isCanContactVendor())
+                .canAccessPremiumListings(detail.getCanAccessPremium())
+                .canContactVendorDirectly(detail.getCanContactVendor())
                 .build();
         subscription = subscriptionRepository.save(subscription);
 
@@ -213,8 +218,8 @@ public class SubscriptionService {
                     .autoRenew(request.isAutoRenew())
                     .maxVendorViewsPerMonth(detail.getMaxVendorViews())
                     .maxSavedLands(detail.getMaxSavedLands())
-                    .canAccessPremiumListings(detail.isCanAccessPremium())
-                    .canContactVendorDirectly(detail.isCanContactVendor())
+                    .canAccessPremiumListings(detail.getCanAccessPremium())
+                    .canContactVendorDirectly(detail.getCanContactVendor())
                     .stripeSubscriptionId(stripeSubscriptionId)
                     .build();
 
@@ -280,8 +285,8 @@ public class SubscriptionService {
                 : detail.getMonthlyPrice());
         subscription.setMaxVendorViewsPerMonth(detail.getMaxVendorViews());
         subscription.setMaxSavedLands(detail.getMaxSavedLands());
-        subscription.setCanAccessPremiumListings(detail.isCanAccessPremium());
-        subscription.setCanContactVendorDirectly(detail.isCanContactVendor());
+        subscription.setCanAccessPremiumListings(detail.getCanAccessPremium());
+        subscription.setCanContactVendorDirectly(detail.getCanContactVendor());
 
         // Update Stripe subscription if it exists
         if (subscription.getStripeSubscriptionId() != null && detail.getStripePriceId() != null) {
@@ -422,11 +427,21 @@ public class SubscriptionService {
         plan.setAnnualPrice(updated.getAnnualPrice());
         plan.setCurrency(updated.getCurrency());
         plan.setFeatures(updated.getFeatures());
-        plan.setMaxVendorViews(updated.getMaxVendorViews());
-        plan.setMaxSavedLands(updated.getMaxSavedLands());
-        plan.setCanAccessPremium(updated.isCanAccessPremium());
-        plan.setCanContactVendor(updated.isCanContactVendor());
-        plan.setPopular(updated.isPopular());
+        if (updated.getMaxVendorViews() != null) {
+            plan.setMaxVendorViews(updated.getMaxVendorViews());
+        }
+        if (updated.getMaxSavedLands() != null) {
+            plan.setMaxSavedLands(updated.getMaxSavedLands());
+        }
+        if (updated.getCanAccessPremium() != null) {
+            plan.setCanAccessPremium(updated.getCanAccessPremium());
+        }
+        if (updated.getCanContactVendor() != null) {
+            plan.setCanContactVendor(updated.getCanContactVendor());
+        }
+        if (updated.getPopular() != null) {
+            plan.setPopular(updated.getPopular());
+        }
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail updated: {}", id);

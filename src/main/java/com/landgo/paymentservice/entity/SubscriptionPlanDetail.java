@@ -41,19 +41,19 @@ public class SubscriptionPlanDetail extends BaseEntity {
     private List<String> features;
 
     @Column(name = "max_vendor_views")
-    private int maxVendorViews;
+    private Integer maxVendorViews;
 
     @Column(name = "max_saved_lands")
-    private int maxSavedLands;
+    private Integer maxSavedLands;
 
     @Column(name = "can_access_premium")
-    private boolean canAccessPremium;
+    private Boolean canAccessPremium;
 
     @Column(name = "can_contact_vendor")
-    private boolean canContactVendor;
+    private Boolean canContactVendor;
 
     @Column(name = "is_popular")
-    private boolean isPopular;
+    private Boolean popular;
 
     @Column(name = "plan_category", length = 50)
     private String planCategory;
