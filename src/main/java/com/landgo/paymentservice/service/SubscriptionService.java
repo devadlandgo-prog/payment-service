@@ -80,16 +80,18 @@ public class SubscriptionService {
 
     @Transactional
     public Map<String, String> createSubscriptionIntent(UUID userId, String email, ProfessionalSubscribeRequest request) {
-        subscriptionRepository.findActiveByUserId(userId)
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
+                request.getPlanId(), request.getPlan(), request.getPlanCategory());
+        String planCategory = detail.getPlanCategory();
+
+        // Only check for active subscription in the same category
+        subscriptionRepository.findActiveByUserIdAndPlanCategory(userId, planCategory)
                 .ifPresent(sub -> {
-                    throw new BadRequestException("User already has an active subscription",
+                    throw new BadRequestException("User already has an active subscription in this category",
                             "SUBSCRIPTION_ALREADY_ACTIVE");
                 });
 
         BillingCycle billingCycle = resolveBillingCycle(request);
-
-        com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
-                request.getPlanId(), request.getPlan(), request.getPlanCategory());
 
         String planType = detail.getPlanType();
 
@@ -100,6 +102,7 @@ public class SubscriptionService {
         Subscription subscription = Subscription.builder()
                 .userId(userId)
                 .plan(planType)
+                .planCategory(planCategory)
                 .status("free".equalsIgnoreCase(planType) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
                 .startDate(LocalDateTime.now())
                 .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
@@ -167,15 +170,19 @@ public class SubscriptionService {
     @Transactional
     public SubscriptionResponse subscribe(UserPrincipal userPrincipal, SubscriptionRequest request) {
         log.info("Processing subscription for user: {} to plan: {}", userPrincipal.getId(), request.getPlanId());
-        subscriptionRepository.findActiveByUserId(userPrincipal.getId())
-                .ifPresent(sub -> {
-                    log.warn("Subscription failed: User {} already has an active subscription", userPrincipal.getId());
-                    throw new BadRequestException("User already has an active subscription",
-                            "SUBSCRIPTION_ALREADY_ACTIVE");
-                });
-
+        
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
+        String planCategory = detail.getPlanCategory();
+
+        // Only check for active subscription in the same category
+        subscriptionRepository.findActiveByUserIdAndPlanCategory(userPrincipal.getId(), planCategory)
+                .ifPresent(sub -> {
+                    log.warn("Subscription failed: User {} already has an active subscription in category {}", 
+                            userPrincipal.getId(), planCategory);
+                    throw new BadRequestException("User already has an active subscription in this category",
+                            "SUBSCRIPTION_ALREADY_ACTIVE");
+                });
 
         String planType = detail.getPlanType();
 
@@ -202,6 +209,7 @@ public class SubscriptionService {
             Subscription subscription = Subscription.builder()
                     .userId(userPrincipal.getId())
                     .plan(planType)
+                    .planCategory(planCategory)
                     .status(SubscriptionStatus.ACTIVE)
                     .startDate(now)
                     .endDate(now.plusDays(durationDays))
@@ -216,7 +224,8 @@ public class SubscriptionService {
                     .build();
 
             subscription = subscriptionRepository.save(subscription);
-            log.info("Subscription activated: {} for user: {}", subscription.getId(), userPrincipal.getId());
+            log.info("Subscription activated: {} for user: {} in category: {}", subscription.getId(), 
+                    userPrincipal.getId(), planCategory);
             return subscriptionMapper.toResponse(subscription);
         } catch (Exception e) {
             log.error("Failed to create Stripe subscription", e);

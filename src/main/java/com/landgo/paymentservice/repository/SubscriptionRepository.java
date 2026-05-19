@@ -18,6 +18,9 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
     @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE'")
     Optional<Subscription> findActiveByUserId(@Param("userId") UUID userId);
 
+    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' AND s.planCategory = :planCategory")
+    Optional<Subscription> findActiveByUserIdAndPlanCategory(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
+
     @Query("SELECT s FROM Subscription s WHERE s.status = 'ACTIVE' AND s.endDate < :date")
     List<Subscription> findExpiredSubscriptions(@Param("date") LocalDateTime date);
 

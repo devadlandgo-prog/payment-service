@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-plan-category-to-subscriptions
+      author: backend-team
+      changes:
+        - addColumn:
+            tableName: subscriptions
+            columns:
+              - column:
+                  name: plan_category
+                  type: varchar(50)

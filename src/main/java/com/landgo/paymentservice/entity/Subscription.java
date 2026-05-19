@@ -13,6 +13,7 @@ import java.util.UUID;
 public class Subscription extends BaseEntity {
     @Column(name = "user_id", nullable = false) private UUID userId;
     @Column(name = "plan", nullable = false, length = 50) private String plan;
+    @Column(name = "plan_category", length = 50) private String planCategory;
     @Enumerated(EnumType.STRING) @Column(name = "status", nullable = false, length = 50) @Builder.Default private SubscriptionStatus status = SubscriptionStatus.PENDING;
     @Column(name = "start_date", nullable = false) private LocalDateTime startDate;
     @Column(name = "end_date", nullable = false) private LocalDateTime endDate;
