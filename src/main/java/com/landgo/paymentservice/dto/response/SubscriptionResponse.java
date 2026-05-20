@@ -10,6 +10,7 @@ import java.util.UUID;
 public class SubscriptionResponse {
     private UUID id;
     private String plan;
+    private String type;
     private SubscriptionStatus status;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
