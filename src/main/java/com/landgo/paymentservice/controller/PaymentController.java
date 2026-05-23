@@ -87,7 +87,7 @@ public class PaymentController {
     }
 
     @PostMapping("/payment/verify-and-fulfill")
-    @Operation(summary = "Verify Stripe PaymentIntent and activate subscription")
+    @Operation(summary = "Verify Stripe PaymentIntent and activate the matching subscription/category")
     public ResponseEntity<ApiResponse<Void>> verifyAndFulfill(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
         if (request == null || !request.containsKey("paymentIntentId")) {
@@ -102,7 +102,10 @@ public class PaymentController {
                         .body(ApiResponse.error("Payment has not succeeded. Status: " + intent.getStatus(), "PAYMENT_NOT_SUCCEEDED"));
             }
             // Mark the corresponding internal payment record as SUCCESS
-            paymentService.markPaymentSucceeded(userPrincipal, paymentIntentId);
+            String planCategory = request.containsKey("planCategory") && request.get("planCategory") != null
+                    ? request.get("planCategory").toString()
+                    : null;
+            paymentService.markPaymentSucceeded(userPrincipal, paymentIntentId, planCategory);
             log.info("Payment verified and fulfilled for userId={} paymentIntentId={}", userPrincipal.getId(), paymentIntentId);
             return ResponseEntity.ok(ApiResponse.success("Payment verified and fulfilled", null));
         } catch (com.stripe.exception.StripeException e) {

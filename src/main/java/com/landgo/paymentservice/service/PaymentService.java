@@ -46,22 +46,32 @@ public class PaymentService {
     }
 
     @Transactional
-    public void markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId) {
-        paymentRepository.findByProviderTransactionIdAndUserId(providerTransactionId, userPrincipal.getId())
-                .ifPresent(payment -> {
-                    payment.setStatus(PaymentStatus.SUCCESS);
-                    paymentRepository.save(payment);
-                    
-                    // If this payment is linked to a subscription, activate it
-                    if (payment.getSubscription() != null) {
-                        com.landgo.paymentservice.entity.Subscription sub = payment.getSubscription();
-                        sub.setStatus(com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE);
-                        sub.setStartDate(java.time.LocalDateTime.now());
-                        // End date is already set during intent creation, but we could adjust it here if needed
-                    }
-                    
-                    log.info("Marked payment {} as SUCCESS for userId={}", providerTransactionId, userPrincipal.getId());
-                });
+    public void markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId, String planCategory) {
+        Payment payment = paymentRepository.findByProviderTransactionIdAndUserId(providerTransactionId, userPrincipal.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found for current user"));
+
+        if (payment.getSubscription() == null) {
+            throw new BadRequestException("No subscription associated with this payment", "VALIDATION_ERROR");
+        }
+
+        com.landgo.paymentservice.entity.Subscription sub = payment.getSubscription();
+        if (planCategory != null && !planCategory.isBlank()) {
+            String requestedCategory = planCategory.trim().toLowerCase();
+            String subscriptionCategory = sub.getPlanCategory() == null ? "" : sub.getPlanCategory().trim().toLowerCase();
+            if (!requestedCategory.equals(subscriptionCategory)) {
+                throw new BadRequestException(
+                        "Payment does not belong to requested planCategory '" + planCategory + "'",
+                        "VALIDATION_ERROR");
+            }
+        }
+
+        payment.setStatus(PaymentStatus.SUCCESS);
+        sub.setStatus(com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE);
+        sub.setStartDate(java.time.LocalDateTime.now());
+        paymentRepository.save(payment);
+
+        log.info("Marked payment {} as SUCCESS and activated subscription {} for userId={}",
+                providerTransactionId, sub.getId(), userPrincipal.getId());
     }
 
     @Transactional(readOnly = true)

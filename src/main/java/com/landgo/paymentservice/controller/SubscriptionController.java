@@ -42,9 +42,11 @@ public class SubscriptionController {
     }
 
     @GetMapping("/my")
-    @Operation(summary = "Get my active plan")
-    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(@CurrentUser UserPrincipal userPrincipal) {
-        SubscriptionResponse response = subscriptionService.getCurrentSubscription(userPrincipal);
+    @Operation(summary = "Get my active subscription. Optional ?type=market_profession|land_listing")
+    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestParam(required = false) String type) {
+        SubscriptionResponse response = subscriptionService.getCurrentSubscription(userPrincipal, type);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
@@ -65,7 +67,7 @@ public class SubscriptionController {
     }
 
     @PostMapping("/intent")
-    @Operation(summary = "Create subscription payment intent")
+    @Operation(summary = "Create subscription payment intent for a specific plan/category")
     public ResponseEntity<ApiResponse<Map<String, String>>> createIntent(
             @CurrentUser UserPrincipal userPrincipal, @Valid @RequestBody ProfessionalSubscribeRequest request) {
         Map<String, String> intent = subscriptionService.createSubscriptionIntent(userPrincipal, request);

@@ -40,10 +40,11 @@ public class SubscriptionService {
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
+        String normalizedCategory = category == null ? null : category.trim().toLowerCase();
         return planDetailRepository.findAll().stream()
                 .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
-                .filter(detail -> category == null || category.isBlank()
-                        || (detail.getPlanCategory() != null && detail.getPlanCategory().equalsIgnoreCase(category)))
+                .filter(detail -> normalizedCategory == null || normalizedCategory.isBlank()
+                        || (detail.getPlanCategory() != null && detail.getPlanCategory().trim().equalsIgnoreCase(normalizedCategory)))
                 .map(detail -> SubscriptionPlanResponse.builder()
                         .id(detail.getId().toString())
                         .planType(detail.getPlanType().toLowerCase())
@@ -242,15 +243,40 @@ public class SubscriptionService {
         return subscriptionMapper.toResponse(subscription);
     }
 
+    @Transactional(readOnly = true)
+    public SubscriptionResponse getCurrentSubscription(UserPrincipal userPrincipal, String category) {
+        if (category == null || category.isBlank()) {
+            return getCurrentSubscription(userPrincipal);
+        }
+        Subscription subscription = subscriptionRepository
+                .findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), category.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("No active subscription found for type: " + category));
+        return subscriptionMapper.toResponse(subscription);
+    }
+
     private com.landgo.paymentservice.entity.SubscriptionPlanDetail resolvePlanDetail(
             String planId,
             String planType,
             String category) {
+        String normalizedCategory = category == null ? null : category.trim().toLowerCase();
+
         if (planId != null && !planId.isBlank()) {
             try {
-                return planDetailRepository.findByIdAndIsActiveTrue(java.util.UUID.fromString(planId))
+                com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = planDetailRepository
+                        .findByIdAndIsActiveTrue(java.util.UUID.fromString(planId))
                         .orElseThrow(() -> new BadRequestException("Invalid or inactive subscription plan",
                                 "VALIDATION_ERROR"));
+
+                if (normalizedCategory != null && !normalizedCategory.isBlank()) {
+                    String detailCategory = detail.getPlanCategory() == null ? "" : detail.getPlanCategory().trim().toLowerCase();
+                    if (!detailCategory.equals(normalizedCategory)) {
+                        throw new BadRequestException(
+                                "Provided planId does not belong to category '" + category + "'",
+                                "VALIDATION_ERROR");
+                    }
+                }
+
+                return detail;
             } catch (IllegalArgumentException ex) {
                 throw new BadRequestException("planId must be a valid UUID", "VALIDATION_ERROR");
             }
@@ -260,8 +286,7 @@ public class SubscriptionService {
             throw new BadRequestException("plan or planId is required", "VALIDATION_ERROR");
         }
 
-        if (category != null && !category.isBlank()) {
-            String normalizedCategory = category.trim().toLowerCase();
+        if (normalizedCategory != null && !normalizedCategory.isBlank()) {
             return planDetailRepository.findByPlanTypeAndPlanCategoryAndIsActiveTrue(planType, normalizedCategory)
                     .orElseThrow(() -> new BadRequestException(
                             "No active plan found for type '" + planType + "' and category '" + category + "'",
