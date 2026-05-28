@@ -59,15 +59,27 @@ public class PaymentService {
             String requestedCategory = planCategory.trim().toLowerCase();
             String subscriptionCategory = sub.getPlanCategory() == null ? "" : sub.getPlanCategory().trim().toLowerCase();
             if (!requestedCategory.equals(subscriptionCategory)) {
+                log.warn("Fulfill category mismatch for paymentIntentId={} userId={} requestedCategory={} subscriptionCategory={}",
+                        providerTransactionId, userPrincipal.getId(), requestedCategory, subscriptionCategory);
                 throw new BadRequestException(
                         "Payment does not belong to requested planCategory '" + planCategory + "'",
                         "VALIDATION_ERROR");
             }
         }
 
+        boolean alreadySucceeded = payment.getStatus() == PaymentStatus.SUCCESS;
+        boolean alreadyActive = sub.getStatus() == com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE;
+        if (alreadySucceeded && alreadyActive) {
+            log.info("Fulfill idempotent success for paymentIntentId={} userId={} subscriptionId={}",
+                    providerTransactionId, userPrincipal.getId(), sub.getId());
+            return;
+        }
+
         payment.setStatus(PaymentStatus.SUCCESS);
-        sub.setStatus(com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE);
-        sub.setStartDate(java.time.LocalDateTime.now());
+        if (!alreadyActive) {
+            sub.setStatus(com.landgo.paymentservice.enums.SubscriptionStatus.ACTIVE);
+            sub.setStartDate(java.time.LocalDateTime.now());
+        }
         paymentRepository.save(payment);
 
         log.info("Marked payment {} as SUCCESS and activated subscription {} for userId={}",

@@ -86,7 +86,7 @@ public class PaymentController {
         }
     }
 
-    @PostMapping("/payment/verify-and-fulfill")
+    @PostMapping({"/payment/verify-and-fulfill", "/verify-and-fulfill"})
     @Operation(summary = "Verify Stripe PaymentIntent and activate the matching subscription/category")
     public ResponseEntity<ApiResponse<Void>> verifyAndFulfill(
             @CurrentUser UserPrincipal userPrincipal, @RequestBody java.util.Map<String, Object> request) {
