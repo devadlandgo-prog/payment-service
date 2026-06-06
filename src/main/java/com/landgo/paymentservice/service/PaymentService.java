@@ -48,7 +48,18 @@ public class PaymentService {
     @Transactional
     public void markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId, String planCategory) {
         Payment payment = paymentRepository.findByProviderTransactionIdAndUserId(providerTransactionId, userPrincipal.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Payment intent not found for current user"));
+                .orElseGet(() -> {
+                    Payment fallbackPayment = paymentRepository.findByProviderTransactionIdAndDeletedFalse(providerTransactionId)
+                            .orElseThrow(() -> new ResourceNotFoundException("No pending payment found for this intent. Ensure /subscriptions/intent was called first."));
+                    if (!fallbackPayment.getUserId().equals(userPrincipal.getId())) {
+                        log.info("Associating payment {} from user {} to user {}", providerTransactionId, fallbackPayment.getUserId(), userPrincipal.getId());
+                        fallbackPayment.setUserId(userPrincipal.getId());
+                        if (userPrincipal.getEmail() != null) {
+                            fallbackPayment.setUserEmail(userPrincipal.getEmail());
+                        }
+                    }
+                    return fallbackPayment;
+                });
 
         if (payment.getSubscription() == null) {
             throw new BadRequestException("No subscription associated with this payment", "VALIDATION_ERROR");

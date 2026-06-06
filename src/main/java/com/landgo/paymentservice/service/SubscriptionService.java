@@ -86,10 +86,10 @@ public class SubscriptionService {
         String planCategory = detail.getPlanCategory();
 
         // Only check for active subscription in the same category
-        subscriptionRepository.findActiveByUserIdAndPlanCategory(userId, planCategory)
+        subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, planCategory)
                 .ifPresent(sub -> {
-                    throw new BadRequestException("User already has an active subscription in this category",
-                            "SUBSCRIPTION_ALREADY_ACTIVE");
+                    throw new BadRequestException("Active subscription already exists for type '" + planCategory + "'",
+                            "SUBSCRIPTION_ALREADY_ACTIVE_FOR_CATEGORY");
                 });
 
         BillingCycle billingCycle = resolveBillingCycle(request);

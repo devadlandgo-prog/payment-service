@@ -29,6 +29,11 @@ public class SecurityConfig {
                 .requestMatchers("/subscriptions/plans/**", "/subscriptions/plans").permitAll()
                 .requestMatchers("/payment/webhook/**", "/webhook/**").permitAll()
                 .anyRequest().authenticated())
+            .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
+                response.setContentType("application/json");
+                response.setStatus(401);
+                response.getWriter().write("{\"success\":false,\"message\":\"" + authException.getMessage() + "\",\"code\":\"UNAUTHORIZED\"}");
+            }))
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
