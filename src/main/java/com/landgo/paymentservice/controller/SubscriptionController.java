@@ -53,8 +53,13 @@ public class SubscriptionController {
     @PostMapping("/cancel")
     @Operation(summary = "Cancel subscription")
     public ResponseEntity<ApiResponse<Void>> cancelSubscription(
-            @CurrentUser UserPrincipal userPrincipal, @RequestParam(required = false) String reason) {
-        subscriptionService.cancelSubscription(userPrincipal, reason);
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String planCategory,
+            @RequestParam(required = false) String id,
+            @RequestParam(required = false) String subscriptionId) {
+        subscriptionService.cancelSubscription(userPrincipal, reason, type, planCategory, id, subscriptionId);
         return ResponseEntity.ok(ApiResponse.success("Subscription cancelled successfully", null));
     }
 
@@ -68,10 +73,24 @@ public class SubscriptionController {
 
     @PostMapping("/intent")
     @Operation(summary = "Create subscription payment intent for a specific plan/category")
-    public ResponseEntity<ApiResponse<Map<String, String>>> createIntent(
+    public ResponseEntity<ApiResponse<com.landgo.paymentservice.dto.response.SubscriptionIntentResponse>> createIntent(
             @CurrentUser UserPrincipal userPrincipal, @Valid @RequestBody ProfessionalSubscribeRequest request) {
-        Map<String, String> intent = subscriptionService.createSubscriptionIntent(userPrincipal, request);
+        com.landgo.paymentservice.dto.response.SubscriptionIntentResponse intent = subscriptionService.createSubscriptionIntent(userPrincipal, request);
         return ResponseEntity.ok(ApiResponse.success("Payment intent created", intent));
+    }
+
+    @PostMapping("/billing-portal")
+    @Operation(summary = "Create Stripe Customer Portal session")
+    public ResponseEntity<ApiResponse<Map<String, String>>> createBillingPortal(
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestParam(required = false, defaultValue = "https://example.com") String returnUrl) {
+        try {
+            String customerId = subscriptionService.createBillingPortalSession(userPrincipal, returnUrl);
+            return ResponseEntity.ok(ApiResponse.success(Map.of("url", customerId)));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to create billing portal session: " + e.getMessage(), "STRIPE_ERROR"));
+        }
     }
 
     @PostMapping("/activate-land")

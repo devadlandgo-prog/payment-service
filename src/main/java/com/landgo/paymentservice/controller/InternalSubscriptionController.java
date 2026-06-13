@@ -25,7 +25,7 @@ public class InternalSubscriptionController {
     }
 
     @PostMapping("/user/{userId}/intent")
-    public ResponseEntity<Map<String, String>> createSubscriptionIntent(
+    public ResponseEntity<com.landgo.paymentservice.dto.response.SubscriptionIntentResponse> createSubscriptionIntent(
             @PathVariable UUID userId,
             @RequestBody ProfessionalSubscribeRequest request) {
         return ResponseEntity.ok(subscriptionService.createSubscriptionIntent(userId, request.getEmail(), request));

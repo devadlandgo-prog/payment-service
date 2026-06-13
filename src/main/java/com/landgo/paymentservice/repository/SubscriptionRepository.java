@@ -15,14 +15,29 @@ import java.util.UUID;
 public interface SubscriptionRepository extends JpaRepository<Subscription, UUID> {
     Optional<Subscription> findByUserId(UUID userId);
 
-    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE'")
-    Optional<Subscription> findActiveByUserId(@Param("userId") UUID userId);
+    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' ORDER BY s.createdAt DESC")
+    List<Subscription> findAllActiveByUserId(@Param("userId") UUID userId);
 
-    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' AND s.planCategory = :planCategory")
-    Optional<Subscription> findActiveByUserIdAndPlanCategory(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
+    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' AND s.planCategory = :planCategory ORDER BY s.createdAt DESC")
+    List<Subscription> findAllActiveByUserIdAndPlanCategory(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
 
-    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' AND LOWER(s.planCategory) = LOWER(:planCategory)")
-    Optional<Subscription> findActiveByUserIdAndPlanCategoryIgnoreCase(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
+    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND s.status = 'ACTIVE' AND LOWER(s.planCategory) = LOWER(:planCategory) ORDER BY s.createdAt DESC")
+    List<Subscription> findAllActiveByUserIdAndPlanCategoryIgnoreCase(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
+
+    @Query("SELECT s FROM Subscription s WHERE s.userId = :userId AND LOWER(s.planCategory) = LOWER(:planCategory) ORDER BY s.createdAt DESC")
+    List<Subscription> findAllByUserIdAndPlanCategoryIgnoreCase(@Param("userId") UUID userId, @Param("planCategory") String planCategory);
+
+    default Optional<Subscription> findActiveByUserId(UUID userId) {
+        return findAllActiveByUserId(userId).stream().findFirst();
+    }
+
+    default Optional<Subscription> findActiveByUserIdAndPlanCategory(UUID userId, String planCategory) {
+        return findAllActiveByUserIdAndPlanCategory(userId, planCategory).stream().findFirst();
+    }
+
+    default Optional<Subscription> findActiveByUserIdAndPlanCategoryIgnoreCase(UUID userId, String planCategory) {
+        return findAllActiveByUserIdAndPlanCategoryIgnoreCase(userId, planCategory).stream().findFirst();
+    }
 
     @Query("SELECT s FROM Subscription s WHERE s.status = 'ACTIVE' AND s.endDate < :date")
     List<Subscription> findExpiredSubscriptions(@Param("date") LocalDateTime date);

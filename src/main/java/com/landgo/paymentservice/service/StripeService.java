@@ -8,10 +8,18 @@ import com.stripe.model.Customer;
 import com.stripe.model.CustomerCollection;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Subscription;
+import com.stripe.model.SetupIntent;
+import com.stripe.model.PaymentMethod;
+import com.stripe.model.billingportal.Session;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.CustomerListParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.SubscriptionCreateParams;
+import com.stripe.param.SetupIntentCreateParams;
+import com.stripe.param.PaymentMethodListParams;
+import com.stripe.param.PaymentMethodAttachParams;
+import com.stripe.param.CustomerUpdateParams;
+import com.stripe.param.billingportal.SessionCreateParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -153,5 +161,63 @@ public class StripeService {
 
         public String getPublishableKey() {
                 return publishableKey;
+        }
+
+        public SetupIntent createSetupIntent(String customerId) throws StripeException {
+                SetupIntentCreateParams params = SetupIntentCreateParams.builder()
+                                .setCustomer(customerId)
+                                .setAutomaticPaymentMethods(
+                                                SetupIntentCreateParams.AutomaticPaymentMethods.builder()
+                                                                .setEnabled(true)
+                                                                .build())
+                                .build();
+                return SetupIntent.create(params);
+        }
+
+        public Session createBillingPortalSession(String customerId, String returnUrl) throws StripeException {
+                SessionCreateParams params = SessionCreateParams.builder()
+                                .setCustomer(customerId)
+                                .setReturnUrl(returnUrl)
+                                .build();
+                return Session.create(params);
+        }
+
+        public List<PaymentMethod> getPaymentMethods(String customerId) throws StripeException {
+                PaymentMethodListParams params = PaymentMethodListParams.builder()
+                                .setCustomer(customerId)
+                                .setType(PaymentMethodListParams.Type.CARD)
+                                .build();
+                return PaymentMethod.list(params).getData();
+        }
+
+        public Map<String, Object> getPaymentMethodDetails(String paymentMethodId) throws StripeException {
+                PaymentMethod paymentMethod = PaymentMethod.retrieve(paymentMethodId);
+                if (paymentMethod != null && paymentMethod.getCard() != null) {
+                        return Map.of(
+                                "id", paymentMethod.getId(),
+                                "brand", paymentMethod.getCard().getBrand(),
+                                "last4", paymentMethod.getCard().getLast4()
+                        );
+                }
+                return Map.of();
+        }
+
+        public void attachPaymentMethod(String customerId, String paymentMethodId) throws StripeException {
+                PaymentMethod paymentMethod = PaymentMethod.retrieve(paymentMethodId);
+                if (paymentMethod.getCustomer() == null || !paymentMethod.getCustomer().equals(customerId)) {
+                        PaymentMethodAttachParams attachParams = PaymentMethodAttachParams.builder()
+                                        .setCustomer(customerId)
+                                        .build();
+                        paymentMethod = paymentMethod.attach(attachParams);
+                }
+
+                Customer customer = Customer.retrieve(customerId);
+                CustomerUpdateParams updateParams = CustomerUpdateParams.builder()
+                                .setInvoiceSettings(
+                                                CustomerUpdateParams.InvoiceSettings.builder()
+                                                                .setDefaultPaymentMethod(paymentMethodId)
+                                                                .build())
+                                .build();
+                customer.update(updateParams);
         }
 }

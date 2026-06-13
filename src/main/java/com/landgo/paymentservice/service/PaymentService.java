@@ -46,7 +46,7 @@ public class PaymentService {
     }
 
     @Transactional
-    public void markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId, String planCategory) {
+    public java.util.UUID markPaymentSucceeded(UserPrincipal userPrincipal, String providerTransactionId, String planCategory) {
         Payment payment = paymentRepository.findByProviderTransactionIdAndUserId(providerTransactionId, userPrincipal.getId())
                 .orElseGet(() -> {
                     Payment fallbackPayment = paymentRepository.findByProviderTransactionIdAndDeletedFalse(providerTransactionId)
@@ -83,7 +83,7 @@ public class PaymentService {
         if (alreadySucceeded && alreadyActive) {
             log.info("Fulfill idempotent success for paymentIntentId={} userId={} subscriptionId={}",
                     providerTransactionId, userPrincipal.getId(), sub.getId());
-            return;
+            return sub.getId();
         }
 
         payment.setStatus(PaymentStatus.SUCCESS);
@@ -95,6 +95,7 @@ public class PaymentService {
 
         log.info("Marked payment {} as SUCCESS and activated subscription {} for userId={}",
                 providerTransactionId, sub.getId(), userPrincipal.getId());
+        return sub.getId();
     }
 
     @Transactional(readOnly = true)

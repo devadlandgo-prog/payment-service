@@ -16,7 +16,7 @@ public class SubscriptionResponse {
     private LocalDateTime endDate;
     private BigDecimal amount;
     private String currency;
-    private String paymentMethod;
+    private Object paymentMethod;
     private boolean autoRenew;
     private boolean isActive;
     private Integer maxVendorViewsPerMonth;
@@ -24,4 +24,8 @@ public class SubscriptionResponse {
     private boolean canAccessPremiumListings;
     private boolean canContactVendorDirectly;
     private String stripeSubscriptionId;
+    
+    private UUID planId;
+    private String billingCycle;
+    private Boolean cancelAtPeriodEnd;
 }

@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: cleanup-duplicate-active-subscriptions
+      author: backend-team
+      changes:
+        - sql:
+            dbms: postgresql
+            sql: |
+              UPDATE subscriptions s1
+              SET status = 'CANCELLED'
+              WHERE s1.status = 'ACTIVE'
+                AND EXISTS (
+                  SELECT 1
+                  FROM subscriptions s2
+                  WHERE s2.user_id = s1.user_id
+                    AND COALESCE(s2.plan_category, '') = COALESCE(s1.plan_category, '')
+                    AND s2.status = 'ACTIVE'
+                    AND (s2.created_at > s1.created_at OR (s2.created_at = s1.created_at AND s2.id > s1.id))
+                );
+  - changeSet:
+      id: add-unique-active-user-category-index
+      author: backend-team
+      changes:
+        - sql:
+            dbms: postgresql
+            sql: |
+              CREATE UNIQUE INDEX unique_active_user_category ON subscriptions (user_id, plan_category) WHERE status = 'ACTIVE';
