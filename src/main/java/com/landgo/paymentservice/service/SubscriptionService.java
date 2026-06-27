@@ -37,6 +37,10 @@ public class SubscriptionService {
     private final com.landgo.paymentservice.repository.SubscriptionPlanDetailRepository planDetailRepository;
     private final PaymentRepository paymentRepository;
     private final StripeService stripeService;
+    private final org.springframework.web.client.RestTemplate restTemplate;
+
+    @org.springframework.beans.factory.annotation.Value("${app.services.core-service-url:http://localhost:8082}")
+    private String coreServiceUrl;
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
@@ -178,7 +182,7 @@ public class SubscriptionService {
         String planCategory = detail.getPlanCategory();
 
         // Only check for active subscription in the same category
-        subscriptionRepository.findActiveByUserIdAndPlanCategory(userPrincipal.getId(), planCategory)
+        subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), planCategory)
                 .ifPresent(sub -> {
                     log.warn("Subscription failed: User {} already has an active subscription in category {}", 
                             userPrincipal.getId(), planCategory);
@@ -255,6 +259,15 @@ public class SubscriptionService {
         return toResponse(subscription);
     }
 
+    @Transactional(readOnly = true)
+    public List<SubscriptionResponse> getActiveSubscriptions(UserPrincipal userPrincipal) {
+        return subscriptionRepository.findAllActiveByUserId(userPrincipal.getId()).stream()
+                .map(this::toResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+
+
     private com.landgo.paymentservice.entity.SubscriptionPlanDetail resolvePlanDetail(
             String planId,
             String planType,
@@ -308,51 +321,10 @@ public class SubscriptionService {
         return matches.get(0);
     }
 
-    @Transactional
-    public void cancelSubscription(UserPrincipal userPrincipal, String reason, String type, String planCategory, String id, String subscriptionId) {
-        log.info("Request to cancel subscription for user: {}. Reason: {}, type: {}, planCategory: {}, id: {}, subscriptionId: {}", 
-                userPrincipal.getId(), reason, type, planCategory, id, subscriptionId);
-        
-        String targetPlanCategory = planCategory != null ? planCategory : type;
-        String targetSubId = subscriptionId != null ? subscriptionId : id;
-        
-        Optional<Subscription> subscriptionOpt = Optional.empty();
-        
-        if (targetSubId != null && !targetSubId.isBlank()) {
-            try {
-                UUID subId = UUID.fromString(targetSubId.trim());
-                subscriptionOpt = subscriptionRepository.findById(subId);
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException("Invalid subscription ID format", "VALIDATION_ERROR");
-            }
-        } else if (targetPlanCategory != null && !targetPlanCategory.isBlank()) {
-            subscriptionOpt = subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), targetPlanCategory.trim());
-            if (subscriptionOpt.isEmpty()) {
-                // Check if there is an already cancelled one to return cleanly (idempotent skip)
-                List<Subscription> allSubs = subscriptionRepository.findAllByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), targetPlanCategory.trim());
-                if (!allSubs.isEmpty() && allSubs.get(0).getStatus() == SubscriptionStatus.CANCELLED) {
-                    log.info("Subscription already cancelled in category: {}", targetPlanCategory);
-                    return;
-                }
-            }
-        } else {
-            subscriptionOpt = subscriptionRepository.findActiveByUserId(userPrincipal.getId());
-        }
-        
-        if (subscriptionOpt.isEmpty()) {
-            throw new ResourceNotFoundException("No active subscription found to cancel");
-        }
-        
-        Subscription subscription = subscriptionOpt.get();
-        if (!subscription.getUserId().equals(userPrincipal.getId())) {
-            throw new BadRequestException("You do not own this subscription", "VALIDATION_ERROR");
-        }
-        
+    private void cancelSingleSubscription(Subscription subscription, String reason) {
         if (subscription.getStatus() == SubscriptionStatus.CANCELLED) {
-            log.info("Subscription {} is already cancelled.", subscription.getId());
             return;
         }
-        
         try {
             if (subscription.getStripeSubscriptionId() != null && !subscription.getStripeSubscriptionId().isBlank()) {
                 stripeService.cancelSubscription(subscription.getStripeSubscriptionId());
@@ -361,13 +333,59 @@ public class SubscriptionService {
         } catch (Exception e) {
             log.error("Failed to cancel Stripe subscription, continuing local cancellation", e);
         }
- 
         subscription.setStatus(SubscriptionStatus.CANCELLED);
         subscription.setCancelledAt(LocalDateTime.now());
         subscription.setCancellationReason(reason);
         subscription.setAutoRenew(false);
         subscriptionRepository.save(subscription);
-        log.info("Subscription {} cancelled for user: {}", subscription.getId(), userPrincipal.getId());
+        log.info("Subscription {} cancelled locally", subscription.getId());
+    }
+
+    @Transactional
+    public void cancelSubscription(UserPrincipal userPrincipal, String reason, String type, String planCategory, String id, String subscriptionId) {
+        log.info("Request to cancel subscription for user: {}. Reason: {}, type: {}, planCategory: {}, id: {}, subscriptionId: {}", 
+                userPrincipal.getId(), reason, type, planCategory, id, subscriptionId);
+        
+        String targetPlanCategory = planCategory != null ? planCategory : type;
+        String targetSubId = subscriptionId != null ? subscriptionId : id;
+        
+        if (targetSubId != null && !targetSubId.isBlank()) {
+            try {
+                UUID subId = UUID.fromString(targetSubId.trim());
+                Subscription subscription = subscriptionRepository.findById(subId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Subscription not found"));
+                if (!subscription.getUserId().equals(userPrincipal.getId())) {
+                    throw new BadRequestException("You do not own this subscription", "VALIDATION_ERROR");
+                }
+                cancelSingleSubscription(subscription, reason);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("Invalid subscription ID format", "VALIDATION_ERROR");
+            }
+        } else if (targetPlanCategory != null && !targetPlanCategory.isBlank()) {
+            List<Subscription> activeSubs = subscriptionRepository.findAllActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), targetPlanCategory.trim());
+            if (!activeSubs.isEmpty()) {
+                for (Subscription sub : activeSubs) {
+                    cancelSingleSubscription(sub, reason);
+                }
+            } else {
+                // Check if there is an already cancelled one to return cleanly (idempotent skip)
+                List<Subscription> allSubs = subscriptionRepository.findAllByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), targetPlanCategory.trim());
+                if (!allSubs.isEmpty() && allSubs.get(0).getStatus() == SubscriptionStatus.CANCELLED) {
+                    log.info("Subscription already cancelled in category: {}", targetPlanCategory);
+                    return;
+                }
+                throw new ResourceNotFoundException("No active subscription found to cancel in category: " + targetPlanCategory);
+            }
+        } else {
+            List<Subscription> activeSubs = subscriptionRepository.findAllActiveByUserId(userPrincipal.getId());
+            if (!activeSubs.isEmpty()) {
+                for (Subscription sub : activeSubs) {
+                    cancelSingleSubscription(sub, reason);
+                }
+            } else {
+                throw new ResourceNotFoundException("No active subscription found to cancel");
+            }
+        }
     }
 
     @Transactional
@@ -580,6 +598,14 @@ public class SubscriptionService {
         return subscriptionRepository.findActiveByUserId(userId).isPresent();
     }
 
+    @Transactional(readOnly = true)
+    public boolean hasActiveSubscription(UUID userId, String category) {
+        if (category == null || category.isBlank()) {
+            return hasActiveSubscription(userId);
+        }
+        return subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, category.trim()).isPresent();
+    }
+
     /**
      * Creates a Stripe Customer Portal session URL.
      */
@@ -612,6 +638,38 @@ public class SubscriptionService {
         }
     }
 
+    public Integer getMaxListingsForPlan(String planType) {
+        if (planType == null) return 0;
+        return switch (planType.trim().toUpperCase()) {
+            case "FREE" -> 1;
+            case "BASIC" -> 2;
+            case "PREMIUM" -> 3;
+            default -> 1000000;
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getUserPlanDetails(UUID userId) {
+        return getUserPlanDetails(userId, "land_listing");
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getUserPlanDetails(UUID userId, String category) {
+        String targetCategory = (category == null || category.isBlank()) ? "land_listing" : category;
+        Optional<Subscription> activeSubOpt = subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, targetCategory);
+        Map<String, Object> details = new HashMap<>();
+        if (activeSubOpt.isPresent()) {
+            Subscription sub = activeSubOpt.get();
+            details.put("planType", sub.getPlan());
+            details.put("maxListings", getMaxListingsForPlan(sub.getPlan()));
+        } else {
+            details.put("planType", "NONE");
+            details.put("maxListings", 0);
+        }
+        return details;
+    }
+
+
     private SubscriptionResponse toResponse(Subscription subscription) {
         if (subscription == null) return null;
         SubscriptionResponse response = subscriptionMapper.toResponse(subscription);
@@ -622,7 +680,32 @@ public class SubscriptionService {
     private void enrichResponse(SubscriptionResponse response, Subscription subscription) {
         if (subscription == null || response == null) return;
         response.setCancelAtPeriodEnd(!subscription.isAutoRenew());
+        
         if (subscription.getPlan() != null && subscription.getPlanCategory() != null) {
+            String planCategory = subscription.getPlanCategory().trim().toLowerCase();
+            if ("land_listing".equals(planCategory)) {
+                response.setMaxListings(getMaxListingsForPlan(subscription.getPlan()));
+                
+                // Fetch slots used from core-service
+                try {
+                    String url = coreServiceUrl + "/internal/listings/user/" + subscription.getUserId() + "/slots-used";
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> coreResp = restTemplate.getForObject(url, Map.class);
+                    if (coreResp != null && coreResp.containsKey("slotsUsed")) {
+                        Object slots = coreResp.get("slotsUsed");
+                        if (slots instanceof Number) {
+                            response.setSlotsUsed(((Number) slots).intValue());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to fetch slotsUsed from core-service for user {}: {}", subscription.getUserId(), e.getMessage());
+                    response.setSlotsUsed(0);
+                }
+            } else {
+                response.setMaxListings(null);
+                response.setSlotsUsed(null);
+            }
+
             planDetailRepository.findByPlanTypeAndPlanCategoryAndIsActiveTrue(subscription.getPlan(), subscription.getPlanCategory())
                 .ifPresent(detail -> {
                     response.setPlanId(detail.getId());

@@ -28,4 +28,9 @@ public class SubscriptionResponse {
     private UUID planId;
     private String billingCycle;
     private Boolean cancelAtPeriodEnd;
+
+    private Integer slotsUsed;
+    private Integer maxListings;
+    private String productType;
 }
+

@@ -43,12 +43,17 @@ public class SubscriptionController {
 
     @GetMapping("/my")
     @Operation(summary = "Get my active subscription. Optional ?type=market_profession|land_listing")
-    public ResponseEntity<ApiResponse<SubscriptionResponse>> getMySubscription(
+    public ResponseEntity<ApiResponse<Object>> getMySubscription(
             @CurrentUser UserPrincipal userPrincipal,
             @RequestParam(required = false) String type) {
+        if (type == null || type.isBlank()) {
+            java.util.List<SubscriptionResponse> responses = subscriptionService.getActiveSubscriptions(userPrincipal);
+            return ResponseEntity.ok(ApiResponse.success(responses));
+        }
         SubscriptionResponse response = subscriptionService.getCurrentSubscription(userPrincipal, type);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
+
 
     @PostMapping("/cancel")
     @Operation(summary = "Cancel subscription")

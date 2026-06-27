@@ -19,10 +19,21 @@ public class InternalSubscriptionController {
     private final SubscriptionService subscriptionService;
 
     @GetMapping("/user/{userId}/active")
-    public ResponseEntity<Map<String, Boolean>> hasActiveSubscription(@PathVariable UUID userId) {
-        boolean active = subscriptionService.hasActiveSubscription(userId);
+    public ResponseEntity<Map<String, Boolean>> hasActiveSubscription(
+            @PathVariable UUID userId,
+            @RequestParam(required = false) String type) {
+        boolean active = subscriptionService.hasActiveSubscription(userId, type);
         return ResponseEntity.ok(Map.of("active", active));
     }
+
+    @GetMapping("/user/{userId}/plan")
+    public ResponseEntity<Map<String, Object>> getUserPlan(
+            @PathVariable UUID userId,
+            @RequestParam(required = false) String category) {
+        Map<String, Object> data = subscriptionService.getUserPlanDetails(userId, category);
+        return ResponseEntity.ok(Map.of("data", data));
+    }
+
 
     @PostMapping("/user/{userId}/intent")
     public ResponseEntity<com.landgo.paymentservice.dto.response.SubscriptionIntentResponse> createSubscriptionIntent(
