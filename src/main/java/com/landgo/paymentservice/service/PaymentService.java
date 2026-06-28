@@ -19,8 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class PaymentService {
-
     private final PaymentRepository paymentRepository;
+    private final com.landgo.paymentservice.repository.SubscriptionRepository subscriptionRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> getMyPayments(UserPrincipal userPrincipal, Pageable pageable) {
@@ -92,6 +92,10 @@ public class PaymentService {
             sub.setStartDate(java.time.LocalDateTime.now());
         }
         paymentRepository.save(payment);
+        
+        // B-BUG-05: Explicitly save the subscription to ensure changes are flushed immediately,
+        // avoiding race conditions if clients poll /subscriptions/my before the transaction completes.
+        subscriptionRepository.save(sub);
 
         log.info("Marked payment {} as SUCCESS and activated subscription {} for userId={}",
                 providerTransactionId, sub.getId(), userPrincipal.getId());

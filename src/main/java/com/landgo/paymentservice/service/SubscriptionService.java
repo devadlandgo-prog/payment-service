@@ -428,7 +428,19 @@ public class SubscriptionService {
         subscription.setStartDate(now);
         subscription.setEndDate(now.plusDays(durationDays));
  
+        Integer oldMaxListings = getMaxListingsForPlan(subscription.getPlan());
+        Integer newMaxListings = getMaxListingsForPlan(detail.getPlanType());
+        
         subscription = subscriptionRepository.save(subscription);
+        
+        if ("land_listing".equalsIgnoreCase(category) && oldMaxListings != null && newMaxListings != null && newMaxListings < oldMaxListings) {
+            try {
+                restTemplate.postForObject(coreServiceUrl + "/internal/listings/user/" + userPrincipal.getId() + "/downgrade", null, Void.class);
+            } catch (Exception e) {
+                log.error("Failed to notify core-service of subscription downgrade", e);
+            }
+        }
+        
         log.info("Plan changed for user {} to {} on {} cycle", userPrincipal.getId(), request.getPlan(),
                 request.getBillingCycle());
         return toResponse(subscription);
