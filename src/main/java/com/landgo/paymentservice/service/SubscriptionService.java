@@ -42,6 +42,39 @@ public class SubscriptionService {
     @org.springframework.beans.factory.annotation.Value("${app.services.core-service-url:http://localhost:8082}")
     private String coreServiceUrl;
 
+    @org.springframework.beans.factory.annotation.Value("${app.services.user-service-url:http://localhost:8081}")
+    private String userServiceUrl;
+
+    private Map<String, String> getUserInfo(UUID userId) {
+        try {
+            Map<?, ?> user = restTemplate.getForObject(userServiceUrl + "/internal/users/" + userId, Map.class);
+            if (user != null) {
+                Map<String, String> info = new HashMap<>();
+                info.put("email", (String) user.get("email"));
+                info.put("fullName", (String) user.get("fullName"));
+                return info;
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch user info from user-service for userId={}: {}", userId, e.getMessage());
+        }
+        return null;
+    }
+
+    private void sendEmail(String toEmail, String subject, String templateName, Map<String, String> variables) {
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("toEmail", toEmail);
+            payload.put("subject", subject);
+            payload.put("templateName", templateName);
+            payload.put("variables", variables);
+            
+            restTemplate.postForObject(userServiceUrl + "/internal/users/email/send", payload, Void.class);
+            log.info("Successfully sent internal payment email request for template: {}", templateName);
+        } catch (Exception e) {
+            log.error("Failed to send internal payment email request for template {}: {}", templateName, e.getMessage());
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
         String normalizedCategory = category == null ? null : category.trim().toLowerCase();
@@ -477,6 +510,28 @@ public class SubscriptionService {
                             .subscription(sub)
                             .build();
                     paymentRepository.save(payment);
+
+                    try {
+                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
+                        if (userInfo != null) {
+                            String email = userInfo.get("email");
+                            String name = userInfo.get("fullName");
+                            
+                            java.util.Map<String, String> vars = new java.util.HashMap<>();
+                            vars.put("User", name);
+                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
+                            vars.put("amountPaid", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
+                            vars.put("txnId", paymentIntentId != null ? paymentIntentId : "N/A");
+                            vars.put("date", java.time.LocalDate.now().toString());
+                            vars.put("renewalDate", sub.getEndDate() != null ? sub.getEndDate().toLocalDate().toString() : java.time.LocalDate.now().plusDays(30).toString());
+                            vars.put("renewalAmount", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
+                            
+                            sendEmail(email, "LandGo - Payment Receipt", "PaymentSuccess", vars);
+                            sendEmail(email, "LandGo - Subscription Activated", "SubscriptionActivated", vars);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to send subscription payment success emails", e);
+                    }
                 }, () -> log.warn("Subscription not found for Stripe ID: {}", stripeSubscriptionId));
     }
 
@@ -505,6 +560,23 @@ public class SubscriptionService {
                             .subscription(sub)
                             .build();
                     paymentRepository.save(payment);
+
+                    try {
+                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
+                        if (userInfo != null) {
+                            String email = userInfo.get("email");
+                            String name = userInfo.get("fullName");
+                            
+                            java.util.Map<String, String> vars = new java.util.HashMap<>();
+                            vars.put("User", name);
+                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
+                            vars.put("amountDue", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
+                            
+                            sendEmail(email, "ACTION REQUIRED: LandGo Payment Failed", "PaymentRejected", vars);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to send subscription payment failed email", e);
+                    }
                 });
     }
 
@@ -517,8 +589,23 @@ public class SubscriptionService {
                     sub.setCancellationReason("Cancelled via Stripe (deleted)");
                     sub.setAutoRenew(false);
                     subscriptionRepository.save(sub);
-                    log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(),
-                            sub.getUserId());
+                    log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(), sub.getUserId());
+
+                    try {
+                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
+                        if (userInfo != null) {
+                            String email = userInfo.get("email");
+                            String name = userInfo.get("fullName");
+                            
+                            java.util.Map<String, String> vars = new java.util.HashMap<>();
+                            vars.put("User", name);
+                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
+                            
+                            sendEmail(email, "LandGo - Subscription Cancelled", "SubscriptionCanceled", vars);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to send subscription cancelled email", e);
+                    }
                 });
     }
 
