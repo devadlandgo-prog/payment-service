@@ -150,12 +150,14 @@ public class SubscriptionService {
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
         String planCategory = detail.getPlanCategory();
 
-        // Only check for active subscription in the same category
-        subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, planCategory)
-                .ifPresent(sub -> {
-                    throw new BadRequestException("Active subscription already exists for type '" + planCategory + "'",
-                            "SUBSCRIPTION_ALREADY_ACTIVE_FOR_CATEGORY");
-                });
+        // Only check for active subscription in non-LAND_LISTING categories
+        if (!"LAND_LISTING".equalsIgnoreCase(planCategory)) {
+            subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, planCategory)
+                    .ifPresent(sub -> {
+                        throw new BadRequestException("Active subscription already exists for type '" + planCategory + "'",
+                                "SUBSCRIPTION_ALREADY_ACTIVE_FOR_CATEGORY");
+                    });
+        }
 
         BillingCycle billingCycle = resolveBillingCycle(request);
 
@@ -203,6 +205,10 @@ public class SubscriptionService {
             payment.setProviderTransactionId(intent.getId());
             paymentRepository.save(payment);
 
+            if ("LAND_LISTING".equalsIgnoreCase(planCategory) && detail.getMaxVendorViews() != null && detail.getMaxVendorViews() > 0) {
+                grantUserListingCredits(userId, detail.getMaxVendorViews());
+            }
+
             log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, planType,
                     billingCycle, subscription.getId());
             return com.landgo.paymentservice.dto.response.SubscriptionIntentResponse.builder()
@@ -242,14 +248,16 @@ public class SubscriptionService {
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
         String planCategory = detail.getPlanCategory();
 
-        // Only check for active subscription in the same category
-        subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), planCategory)
-                .ifPresent(sub -> {
-                    log.warn("Subscription failed: User {} already has an active subscription in category {}", 
-                            userPrincipal.getId(), planCategory);
-                    throw new BadRequestException("User already has an active subscription in this category",
-                            "SUBSCRIPTION_ALREADY_ACTIVE");
-                });
+        // Only check for active subscription in non-LAND_LISTING categories
+        if (!"LAND_LISTING".equalsIgnoreCase(planCategory)) {
+            subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), planCategory)
+                    .ifPresent(sub -> {
+                        log.warn("Subscription failed: User {} already has an active subscription in category {}", 
+                                userPrincipal.getId(), planCategory);
+                        throw new BadRequestException("User already has an active subscription in this category",
+                                "SUBSCRIPTION_ALREADY_ACTIVE");
+                    });
+        }
 
         String planType = detail.getPlanType();
 
@@ -291,6 +299,11 @@ public class SubscriptionService {
                     .build();
 
             subscription = subscriptionRepository.save(subscription);
+
+            if ("LAND_LISTING".equalsIgnoreCase(planCategory) && detail.getMaxVendorViews() != null && detail.getMaxVendorViews() > 0) {
+                grantUserListingCredits(userPrincipal.getId(), detail.getMaxVendorViews());
+            }
+
             log.info("Subscription activated: {} for user: {} in category: {}", subscription.getId(), 
                     userPrincipal.getId(), planCategory);
             return toResponse(subscription);
@@ -298,6 +311,15 @@ public class SubscriptionService {
             log.error("Failed to create Stripe subscription", e);
             throw new BadRequestException("Failed to process subscription payment: " + e.getMessage(),
                     "PAYMENT_FAILED");
+        }
+    }
+
+    private void grantUserListingCredits(UUID userId, int credits) {
+        try {
+            restTemplate.put(userServiceUrl + "/internal/users/" + userId + "/add-listing-credits?credits=" + credits, null);
+            log.info("Successfully granted {} listing credits to user {} via user-service internal API", credits, userId);
+        } catch (Exception e) {
+            log.error("Failed to grant listing credits to user {}: {}", userId, e.getMessage(), e);
         }
     }
 

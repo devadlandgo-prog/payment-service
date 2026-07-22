@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-4-dml-seed-land-listing-plans
+      author: landgo
+      runOnChange: true
+      runAlways: false
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../dml/004_seed_land_listing_plans.sql
+            relativeToChangelogFile: true
