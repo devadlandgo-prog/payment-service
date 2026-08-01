@@ -2,6 +2,7 @@ package com.landgo.paymentservice.controller;
 
 import com.landgo.paymentservice.service.SubscriptionService;
 import com.stripe.exception.SignatureVerificationException;
+import io.swagger.v3.oas.annotations.Hidden;
 import com.stripe.model.Event;
 import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.Invoice;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
+@Hidden
 @RestController
 @RequestMapping("/payment/webhook")
 @RequiredArgsConstructor
