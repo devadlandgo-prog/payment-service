@@ -40,6 +40,35 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED)
                 .body(ApiResponse.error(ex.getMessage(), "UNAUTHORIZED"));
     }
+    /**
+     * Unknown URL paths.
+     *
+     * <p>Without this, {@code NoResourceFoundException} falls through to the catch-all below and
+     * every mistyped or outdated URL answers 500, which reads as a server fault and sends callers
+     * hunting for a bug that is not there. A 404 says what is actually wrong.
+     */
+    @ExceptionHandler({
+            org.springframework.web.servlet.resource.NoResourceFoundException.class,
+            org.springframework.web.servlet.NoHandlerFoundException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleNotFound(Exception ex) {
+        log.warn("No handler for request: {}", ex.getMessage());
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("Endpoint not found", "ENDPOINT_NOT_FOUND"));
+    }
+
+    /**
+     * Wrong HTTP verb against a path that does exist — POST where only GET is mapped, say.
+     * Also a client error, and also indistinguishable from a server fault without this.
+     */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not supported: {}", ex.getMessage());
+        return ResponseEntity.status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiResponse.error(ex.getMessage(), "METHOD_NOT_ALLOWED"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
         log.error("Unhandled exception occurred: ", ex);
