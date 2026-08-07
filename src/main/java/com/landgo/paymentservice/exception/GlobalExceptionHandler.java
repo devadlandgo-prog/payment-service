@@ -69,6 +69,22 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ex.getMessage(), "METHOD_NOT_ALLOWED"));
     }
 
+    /**
+     * A path variable or query param that cannot be converted to the declared type — most often a
+     * malformed UUID. The caller sent something wrong, so this is a 400; without it the conversion
+     * failure reaches the catch-all and reports 500, which points debugging at the wrong system.
+     *
+     * <p>Only the parameter name is echoed back. The offending value is left out on purpose: it is
+     * attacker-controlled and would otherwise be reflected verbatim into the response body.
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        log.warn("Type mismatch for parameter '{}': {}", ex.getName(), ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error("Invalid value for parameter '" + ex.getName() + "'", "VALIDATION_ERROR"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception ex) {
         log.error("Unhandled exception occurred: ", ex);
