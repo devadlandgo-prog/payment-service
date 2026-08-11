@@ -20,7 +20,14 @@ permissions:
 jobs:
   build-and-deploy:
     name: Build & Deploy
-    runs-on: ubuntu-latest
+    # ARM64 runner so `docker build` produces a Graviton image natively.
+    # The ECS task definitions for this service are ARM64 (20% cheaper on both
+    # vCPU-hours and GB-hours); an x86 image in an ARM64 task definition fails
+    # at startup with "exec format error", so the two must move together.
+    #
+    # Native ARM rather than buildx + QEMU: emulating a Maven build would add
+    # several minutes per run, and ARM runners are free for public repos.
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout code
