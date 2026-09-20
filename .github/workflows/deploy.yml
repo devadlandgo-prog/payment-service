@@ -1,6 +1,10 @@
 name: Deploy Payment Service to ECS
 
 on:
+  # Lets a deploy be re-run without an empty commit - needed when the image has
+  # to be rebuilt for a reason that is not a code change, such as moving to a
+  # new AWS account or rotating a build-time secret.
+  workflow_dispatch:
   push:
     branches: [develop]
   pull_request:
