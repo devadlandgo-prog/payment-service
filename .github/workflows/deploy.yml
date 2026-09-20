@@ -64,8 +64,18 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # ECR tag mutability is IMMUTABLE and the tag is the commit SHA, so
+          # rebuilding the same commit cannot push - "tag invalid ... already
+          # exists". That made workflow_dispatch useless: a redeploy always died
+          # on the push step. Reuse the existing image instead; it is
+          # byte-identical anyway, because the commit has not changed.
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+               --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "::notice::Image $IMAGE_TAG already in ECR; reusing it and redeploying."
+          else
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          fi
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Download current task definition
