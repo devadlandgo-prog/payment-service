@@ -61,3 +61,39 @@ CREATE TABLE IF NOT EXISTS plan_features (
   plan_id UUID NOT NULL REFERENCES subscription_plan_details(id) ON DELETE CASCADE,
   feature VARCHAR(255)
 );
+
+-- Unique on plan_type, added separately rather than inline on the CREATE TABLE
+-- above, because that statement is IF NOT EXISTS and therefore a no-op against
+-- a database where the table already exists - which is every database that has
+-- run this changelog before today.
+--
+-- Two things depend on this constraint existing:
+--   * 001_seed_reference_data.sql inserts with ON CONFLICT (plan_type), which
+--     Postgres rejects outright when no matching unique constraint exists:
+--     "there is no unique or exclusion constraint matching the ON CONFLICT
+--     specification".
+--   * v1.0.1/ddl/004 drops a constraint by the exact name below before adding
+--     the composite (plan_type, plan_category) one, so the name matters.
+--
+-- It was missing because the table was originally created by the legacy
+-- sql/004_3_create_plan_details_table.sql, which did declare plan_type UNIQUE.
+-- When the changelog was restructured into v1.0.0 the constraint was dropped
+-- from the definition, and nothing failed: existing databases already had it
+-- from the legacy script. The gap only appears on a database built from this
+-- changelog alone, which is exactly what a rebuild in a new AWS account does.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'subscription_plan_details_plan_type_key'
+      AND t.relname = 'subscription_plan_details'
+      AND n.nspname = 'payments'
+  ) THEN
+    ALTER TABLE subscription_plan_details
+      ADD CONSTRAINT subscription_plan_details_plan_type_key UNIQUE (plan_type);
+  END IF;
+END
+$$;
