@@ -38,4 +38,14 @@ public class SubscriptionPlanRequest {
     /** market_profession | land_listing */
     @NotBlank
     private String type;
+
+    /**
+     * ONE_TIME | RECURRING. Optional — when omitted it is inferred from {@link #type}, so existing
+     * dashboard clients keep working.
+     */
+    private String billingModel;
+
+    /** Credits a single purchase of a land package grants. Required for ONE_TIME plans. */
+    @jakarta.validation.constraints.Min(value = 1, message = "listingCredits must be at least 1")
+    private Integer listingCredits;
 }

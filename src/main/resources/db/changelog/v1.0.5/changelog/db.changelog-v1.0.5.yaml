@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-5-ddl-listing-credits
+      author: backend-team
+      changes:
+        - sqlFile:
+            path: ../ddl/005_listing_credits.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: payments-v1-0-5-dml-backfill-listing-credit-balances
+      author: backend-team
+      changes:
+        - sqlFile:
+            path: ../dml/005_backfill_listing_credit_balances.sql
+            relativeToChangelogFile: true

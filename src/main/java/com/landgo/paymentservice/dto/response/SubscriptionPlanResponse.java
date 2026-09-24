@@ -27,4 +27,16 @@ public class SubscriptionPlanResponse {
     private Boolean isActive;
     private String stripeProductId;
     private String stripePriceId;
+
+    /** ONE_TIME for land listing credit packages, RECURRING for market professional plans. */
+    private String billingModel;
+
+    /** Credits one purchase grants. Present only for ONE_TIME land packages. */
+    private Integer listingCredits;
+
+    /**
+     * Allowed recurring intervals. Empty for a one-time package, which is why the web plan card
+     * must not render a monthly/annual toggle for it.
+     */
+    private java.util.List<String> billingIntervals;
 }

@@ -32,5 +32,25 @@ public class SubscriptionResponse {
     private Integer slotsUsed;
     private Integer maxListings;
     private String productType;
+
+    /** ONE_TIME for land listing credit purchases, RECURRING for market professional plans. */
+    private String billingModel;
+
+    // ── Land listing credits ────────────────────────────────────────────────
+    // Populated only for the land_listing product line. These are an aggregate
+    // across every package the user has ever bought, not one subscription's
+    // allowance, and they never expire — which is why nextBillingDate,
+    // cancelAtPeriodEnd and endDate are all null alongside them.
+
+    private Integer creditsPurchased;
+    private Integer creditsUsed;
+    private Integer creditsAvailable;
+    private Boolean creditsNeverExpire;
+
+    /** Next charge date for a recurring plan; null for land credits, which never renew. */
+    private LocalDateTime nextBillingDate;
+
+    /** False for land credits: there is no subscription to cancel. */
+    private Boolean cancellable;
 }
 

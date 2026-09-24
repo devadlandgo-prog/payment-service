@@ -133,6 +133,8 @@ public class SubscriptionController {
                 .canContactVendor(request.getCanContactVendor())
                 .popular(request.getPopular())
                 .planCategory(request.getType())
+                .billingModel(resolveBillingModel(request))
+                .listingCredits(request.getListingCredits())
                 .isActive(true)
                 .build();
         return ResponseEntity.ok(ApiResponse.success("Plan created successfully", subscriptionService.savePlanDetail(plan)));
@@ -157,8 +159,32 @@ public class SubscriptionController {
                 .canContactVendor(request.getCanContactVendor())
                 .popular(request.getPopular())
                 .planCategory(request.getType())
+                .billingModel(resolveBillingModel(request))
+                .listingCredits(request.getListingCredits())
                 .build();
         return ResponseEntity.ok(ApiResponse.success("Plan updated successfully", subscriptionService.updatePlanDetail(id, updated)));
+    }
+
+    /**
+     * Billing model for a plan being saved.
+     *
+     * <p>Explicit when the dashboard sends it; otherwise inferred from the category so existing
+     * clients that predate the field keep creating correct plans rather than silently marking a
+     * land package as recurring.
+     */
+    private com.landgo.paymentservice.enums.BillingModel resolveBillingModel(SubscriptionPlanRequest request) {
+        if (request.getBillingModel() != null && !request.getBillingModel().isBlank()) {
+            try {
+                return com.landgo.paymentservice.enums.BillingModel.valueOf(
+                        request.getBillingModel().trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new com.landgo.paymentservice.exception.BadRequestException(
+                        "billingModel must be ONE_TIME or RECURRING", "VALIDATION_ERROR");
+            }
+        }
+        return "land_listing".equalsIgnoreCase(request.getType() == null ? "" : request.getType().trim())
+                ? com.landgo.paymentservice.enums.BillingModel.ONE_TIME
+                : com.landgo.paymentservice.enums.BillingModel.RECURRING;
     }
 
     @DeleteMapping("/plans/{id}")

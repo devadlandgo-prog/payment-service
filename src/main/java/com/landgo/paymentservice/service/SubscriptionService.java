@@ -37,71 +37,39 @@ public class SubscriptionService {
     private final com.landgo.paymentservice.repository.SubscriptionPlanDetailRepository planDetailRepository;
     private final PaymentRepository paymentRepository;
     private final StripeService stripeService;
+    private final ListingCreditService listingCreditService;
+    private final PaymentEmailService paymentEmailService;
     private final org.springframework.web.client.RestTemplate restTemplate;
+
+    /** Plan category for the one-time land listing credit packages. */
+    public static final String LAND_LISTING = "land_listing";
+
+    /** Plan category for the recurring marketplace-professional subscriptions. */
+    public static final String MARKET_PROFESSION = "market_profession";
+
+    /**
+     * Land credits never expire, but {@code subscriptions.end_date} is NOT NULL and the expiry
+     * scheduler reads it. A purchase row therefore carries a date far beyond any plausible
+     * lifetime rather than a real term, and {@link #processExpiredSubscriptions()} skips the
+     * category outright so the value is never load-bearing.
+     */
+    private static final int LAND_CREDIT_RECORD_YEARS = 100;
+
+    /**
+     * Reason the plan-switch flow supplies when it cancels the old plan. The subscriber is not
+     * cancelling anything, so the ordinary cancellation email is suppressed for it.
+     */
+    private static final String PLAN_SWITCH_REASON = "Switching to a different plan";
+
+    static boolean isLandListing(String planCategory) {
+        return planCategory != null && LAND_LISTING.equalsIgnoreCase(planCategory.trim());
+    }
 
     @org.springframework.beans.factory.annotation.Value("${app.services.core-service-url:http://localhost:8082}")
     private String coreServiceUrl;
 
     @org.springframework.beans.factory.annotation.Value("${app.services.user-service-url:http://localhost:8081}")
     private String userServiceUrl;
-
-    private Map<String, String> getUserInfo(UUID userId) {
-        try {
-            Map<?, ?> user = restTemplate.getForObject(userServiceUrl + "/internal/users/" + userId, Map.class);
-            if (user != null) {
-                Map<String, String> info = new HashMap<>();
-                info.put("email", (String) user.get("email"));
-                info.put("fullName", (String) user.get("fullName"));
-                return info;
-            }
-        } catch (Exception e) {
-            log.error("Failed to fetch user info from user-service for userId={}: {}", userId, e.getMessage());
-        }
-        return null;
-    }
-
-    @org.springframework.beans.factory.annotation.Value("${app.mail.logo-url:https://landgo.app/logo_with_tagline.png}")
-    private String logoUrl;
-
-    private void sendEmail(String toEmail, String subject, String templateName, Map<String, String> variables) {
-        try {
-            String htmlBody = renderTemplate(templateName, variables);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("toEmail", toEmail);
-            payload.put("subject", subject);
-            payload.put("htmlBody", htmlBody);
-            
-            restTemplate.postForObject(userServiceUrl + "/internal/users/email/send", payload, Void.class);
-            log.info("Successfully sent internal payment HTML email request for template: {}", templateName);
-        } catch (Exception e) {
-            log.error("Failed to render/send internal payment email request for template {}: {}", templateName, e.getMessage());
-        }
-    }
-
-    private String renderTemplate(String templateName, Map<String, String> variables) throws java.io.IOException {
-        String templatePath = "email-templates/" + templateName + ".html";
-        org.springframework.core.io.ClassPathResource resource = new org.springframework.core.io.ClassPathResource(templatePath);
-        if (!resource.exists()) {
-            throw new IllegalArgumentException("Template file not found: " + templatePath);
-        }
-        String template = new String(resource.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-
-        // Inject logoUrl
-        template = template.replace("/static/icon.svg", logoUrl);
-        template = template.replace("{{logoUrl}}", logoUrl);
-
-        if (variables != null) {
-            for (Map.Entry<String, String> entry : variables.entrySet()) {
-                String key = entry.getKey();
-                String value = entry.getValue() != null ? entry.getValue() : "";
-                template = template.replace("<!-- -->" + key + "<!-- -->", value);
-                template = template.replace("{{" + key + "}}", value);
-                template = template.replace("${" + key + "}", value);
-            }
-        }
-        return template;
-    }
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
@@ -118,7 +86,7 @@ public class SubscriptionService {
                         .monthlyPrice(detail.getMonthlyPrice())
                         .annualPrice(detail.getAnnualPrice())
                         .price(detail.getMonthlyPrice())
-                        .billingPeriod("MONTHLY")
+                        .billingPeriod(detail.isLandListing() ? "ONE_TIME" : "MONTHLY")
                         .currency(detail.getCurrency())
                         .features(detail.getFeatures() != null ? new java.util.ArrayList<>(detail.getFeatures())
                                 : java.util.Collections.emptyList())
@@ -128,7 +96,18 @@ public class SubscriptionService {
                         .canContactVendor(detail.getCanContactVendor())
                         .popular(detail.getPopular())
                         .type(detail.getPlanCategory())
-                        .maxDuration("free".equalsIgnoreCase(detail.getPlanType()) ? 36500 : 30)
+                        // maxDuration is a recurring-plan term. A land package has no term at
+                        // all, so it is left null rather than implying a 30-day credit expiry.
+                        .maxDuration(detail.isLandListing()
+                                ? null
+                                : ("free".equalsIgnoreCase(detail.getPlanType()) ? 36500 : 30))
+                        .billingModel(detail.isLandListing()
+                                ? com.landgo.paymentservice.enums.BillingModel.ONE_TIME.name()
+                                : com.landgo.paymentservice.enums.BillingModel.RECURRING.name())
+                        .listingCredits(detail.isLandListing() ? detail.resolveListingCredits() : null)
+                        .billingIntervals(detail.isLandListing()
+                                ? java.util.List.of()
+                                : java.util.List.of("MONTHLY", "ANNUAL"))
                         .isActive(true)
                         .stripeProductId(detail.getStripeProductId())
                         .stripePriceId(detail.getStripePriceId())
@@ -149,9 +128,12 @@ public class SubscriptionService {
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
         String planCategory = detail.getPlanCategory();
+        boolean landListing = detail.isLandListing();
 
-        // Only check for active subscription in non-LAND_LISTING categories
-        if (!"LAND_LISTING".equalsIgnoreCase(planCategory)) {
+        // A land package is bought outright and can be bought again at any time, so owning one is
+        // never a reason to refuse checkout. Recurring categories still allow only one active
+        // subscription at a time.
+        if (!landListing) {
             subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, planCategory)
                     .ifPresent(sub -> {
                         throw new BadRequestException("Active subscription already exists for type '" + planCategory + "'",
@@ -159,23 +141,25 @@ public class SubscriptionService {
                     });
         }
 
-        BillingCycle billingCycle = resolveBillingCycle(request);
+        BillingCycle billingCycle = resolveBillingCycle(request, detail);
 
         String planType = detail.getPlanType();
 
-        BigDecimal amount = billingCycle == BillingCycle.ANNUAL
-                ? detail.getAnnualPrice()
-                : detail.getMonthlyPrice();
+        BigDecimal amount = resolveAmount(detail, billingCycle);
 
+        LocalDateTime now = LocalDateTime.now();
         Subscription subscription = Subscription.builder()
                 .userId(userId)
                 .plan(planType)
                 .planCategory(planCategory)
                 .status("free".equalsIgnoreCase(planType) ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PENDING)
-                .startDate(LocalDateTime.now())
-                .endDate(LocalDateTime.now().plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
+                .startDate(now)
+                .endDate(landListing
+                        ? now.plusYears(LAND_CREDIT_RECORD_YEARS)
+                        : now.plusDays(billingCycle == BillingCycle.ANNUAL ? 365 : 30))
                 .amount(amount)
-                .autoRenew(true)
+                // A one-time purchase has nothing to renew.
+                .autoRenew(!landListing)
                 .maxVendorViewsPerMonth(detail.getMaxVendorViews())
                 .maxSavedLands(detail.getMaxSavedLands())
                 .canAccessPremiumListings(detail.getCanAccessPremium())
@@ -205,9 +189,9 @@ public class SubscriptionService {
             payment.setProviderTransactionId(intent.getId());
             paymentRepository.save(payment);
 
-            if ("LAND_LISTING".equalsIgnoreCase(planCategory) && detail.getMaxVendorViews() != null && detail.getMaxVendorViews() > 0) {
-                grantUserListingCredits(userId, detail.getMaxVendorViews());
-            }
+            // Credits are granted when the payment is confirmed, never here. Creating an intent is
+            // not a purchase: the buyer may dismiss the Stripe sheet or have the card declined,
+            // and granting on intent handed out free credits to anyone who opened checkout.
 
             log.info("Real Stripe PaymentIntent created for user {} plan {} cycle {}. SubID: {}", userId, planType,
                     billingCycle, subscription.getId());
@@ -225,19 +209,56 @@ public class SubscriptionService {
     }
 
 
-    private BillingCycle resolveBillingCycle(ProfessionalSubscribeRequest request) {
-        if (request.getBillingCycle() != null) {
-            return request.getBillingCycle();
+    /**
+     * Resolves the billing cycle for a checkout against what the plan actually supports.
+     *
+     * <p>A land package is always {@code ONE_TIME} — the client need not send anything, and a
+     * monthly/annual value for one is a bug worth surfacing rather than silently honouring.
+     * Market plans accept only {@code MONTHLY} or {@code ANNUAL}.
+     */
+    private BillingCycle resolveBillingCycle(ProfessionalSubscribeRequest request,
+                                             com.landgo.paymentservice.entity.SubscriptionPlanDetail detail) {
+        boolean landListing = detail != null && detail.isLandListing();
+
+        BillingCycle requested = request.getBillingCycle();
+        if (requested == null && request.getSubscriptionType() != null
+                && !request.getSubscriptionType().isBlank()) {
+            requested = switch (request.getSubscriptionType().trim().toUpperCase()) {
+                case "MONTHLY", "MONTH" -> BillingCycle.MONTHLY;
+                case "ANNUAL", "YEARLY", "YEAR" -> BillingCycle.ANNUAL;
+                case "ONE_TIME", "ONETIME", "ONE-TIME", "ONCE" -> BillingCycle.ONE_TIME;
+                default -> throw new BadRequestException("Invalid subscriptionType", "VALIDATION_ERROR");
+            };
         }
-        if (request.getSubscriptionType() == null || request.getSubscriptionType().isBlank()) {
+
+        if (landListing) {
+            // A deployed client that predates one-time billing still sends MONTHLY here. The
+            // purchase is one-time regardless of what it asked for, so the value is overridden
+            // rather than rejected — failing would break land checkout for every app version
+            // already in the wild.
+            if (requested != null && requested != BillingCycle.ONE_TIME) {
+                log.info("Ignoring {} billing cycle on a one-time land package checkout", requested);
+            }
+            return BillingCycle.ONE_TIME;
+        }
+
+        if (requested == null) {
             throw new BadRequestException("subscriptionType is required", "VALIDATION_ERROR");
         }
-        String normalized = request.getSubscriptionType().trim().toUpperCase();
-        return switch (normalized) {
-            case "MONTHLY", "MONTH" -> BillingCycle.MONTHLY;
-            case "ANNUAL", "YEARLY", "YEAR" -> BillingCycle.ANNUAL;
-            default -> throw new BadRequestException("Invalid subscriptionType", "VALIDATION_ERROR");
-        };
+        if (requested == BillingCycle.ONE_TIME) {
+            throw new BadRequestException(
+                    "Recurring plans must be billed MONTHLY or ANNUAL", "VALIDATION_ERROR");
+        }
+        return requested;
+    }
+
+    /** Price for a checkout: a one-time package has a single price, whichever column holds it. */
+    private BigDecimal resolveAmount(com.landgo.paymentservice.entity.SubscriptionPlanDetail detail,
+                                     BillingCycle billingCycle) {
+        if (detail.isLandListing()) {
+            return detail.getMonthlyPrice() != null ? detail.getMonthlyPrice() : detail.getAnnualPrice();
+        }
+        return billingCycle == BillingCycle.ANNUAL ? detail.getAnnualPrice() : detail.getMonthlyPrice();
     }
 
     @Transactional
@@ -248,8 +269,11 @@ public class SubscriptionService {
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
         String planCategory = detail.getPlanCategory();
 
-        // Only check for active subscription in non-LAND_LISTING categories
-        if (!"LAND_LISTING".equalsIgnoreCase(planCategory)) {
+        boolean landListing = detail.isLandListing();
+
+        // Land packages are repeat-purchasable by design; only recurring categories are limited
+        // to one active subscription.
+        if (!landListing) {
             subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), planCategory)
                     .ifPresent(sub -> {
                         log.warn("Subscription failed: User {} already has an active subscription in category {}", 
@@ -268,7 +292,9 @@ public class SubscriptionService {
             String customerId = stripeService.getOrCreateCustomer(userPrincipal);
             String stripeSubscriptionId = null;
 
-            if (detail.getStripePriceId() != null && !detail.getStripePriceId().isBlank()) {
+            // A one-time package must never create a Stripe Subscription — that would set up a
+            // recurring charge for something the buyer paid for once.
+            if (!landListing && detail.getStripePriceId() != null && !detail.getStripePriceId().isBlank()) {
                 com.stripe.model.Subscription stripeSub = stripeService.createSubscription(customerId,
                         detail.getStripePriceId());
                 stripeSubscriptionId = stripeSub.getId();
@@ -287,10 +313,10 @@ public class SubscriptionService {
                     .planCategory(planCategory)
                     .status(SubscriptionStatus.ACTIVE)
                     .startDate(now)
-                    .endDate(now.plusDays(durationDays))
+                    .endDate(landListing ? now.plusYears(LAND_CREDIT_RECORD_YEARS) : now.plusDays(durationDays))
                     .amount(detail.getMonthlyPrice())
                     .paymentMethod(paymentMethod)
-                    .autoRenew(request.isAutoRenew())
+                    .autoRenew(!landListing && request.isAutoRenew())
                     .maxVendorViewsPerMonth(detail.getMaxVendorViews())
                     .maxSavedLands(detail.getMaxSavedLands())
                     .canAccessPremiumListings(detail.getCanAccessPremium())
@@ -300,8 +326,8 @@ public class SubscriptionService {
 
             subscription = subscriptionRepository.save(subscription);
 
-            if ("LAND_LISTING".equalsIgnoreCase(planCategory) && detail.getMaxVendorViews() != null && detail.getMaxVendorViews() > 0) {
-                grantUserListingCredits(userPrincipal.getId(), detail.getMaxVendorViews());
+            if (landListing) {
+                grantLandListingCredits(subscription, detail, null);
             }
 
             log.info("Subscription activated: {} for user: {} in category: {}", subscription.getId(), 
@@ -314,12 +340,44 @@ public class SubscriptionService {
         }
     }
 
-    private void grantUserListingCredits(UUID userId, int credits) {
+    /**
+     * Credits a completed land-listing purchase.
+     *
+     * <p>Keyed on the subscription (purchase) id, so a replayed webhook, a retried
+     * {@code verify-and-fulfill} and the direct {@code subscribe} path can all call this for the
+     * same purchase without granting twice.
+     *
+     * @return the resulting balance, or null when the plan grants no credits
+     */
+    public com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse grantLandListingCredits(
+            Subscription subscription,
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail detail,
+            Payment payment) {
+        int credits = detail != null ? detail.resolveListingCredits() : 0;
+        if (credits <= 0) {
+            log.warn("Land plan {} grants no listing credits — nothing to add for subscription {}",
+                    detail != null ? detail.getPlanType() : "unknown", subscription.getId());
+            return null;
+        }
+
+        com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse balance =
+                listingCreditService.grantPurchasedCredits(
+                        subscription.getUserId(), detail, payment, credits,
+                        "purchase.subscription:" + subscription.getId());
+
+        // Mirror the purchased total onto the user record so older clients reading maxListings
+        // still see a sane number. The ledger, not this field, gates listing creation.
+        mirrorPurchasedCreditsToUserService(subscription.getUserId(), balance.getCreditsPurchased());
+        return balance;
+    }
+
+    private void mirrorPurchasedCreditsToUserService(UUID userId, int creditsPurchased) {
         try {
-            restTemplate.put(userServiceUrl + "/internal/users/" + userId + "/add-listing-credits?credits=" + credits, null);
-            log.info("Successfully granted {} listing credits to user {} via user-service internal API", credits, userId);
+            restTemplate.put(userServiceUrl + "/internal/users/" + userId
+                    + "/listing-credits?creditsPurchased=" + creditsPurchased, null);
         } catch (Exception e) {
-            log.error("Failed to grant listing credits to user {}: {}", userId, e.getMessage(), e);
+            log.warn("Could not mirror listing credit total to user-service for user {}: {}",
+                    userId, e.getMessage());
         }
     }
 
@@ -336,17 +394,80 @@ public class SubscriptionService {
         if (category == null || category.isBlank()) {
             return getCurrentSubscription(userPrincipal);
         }
+        if (isLandListing(category)) {
+            List<Subscription> land = subscriptionRepository
+                    .findAllActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), category.trim());
+            return aggregatedLandCredits(userPrincipal.getId(), land)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "No land listing credits purchased yet"));
+        }
         Subscription subscription = subscriptionRepository
                 .findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), category.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("No active subscription found for type: " + category));
         return toResponse(subscription);
     }
 
+    /**
+     * Everything the user currently holds: their recurring subscriptions plus, at most, one
+     * aggregated land-credit entitlement.
+     *
+     * <p>A user may have bought the same land package five times. Those are five purchases, not
+     * five subscriptions, and listing them individually made the balance look like five competing
+     * plans. They collapse into a single entry carrying the summed credits.
+     */
     @Transactional(readOnly = true)
     public List<SubscriptionResponse> getActiveSubscriptions(UserPrincipal userPrincipal) {
-        return subscriptionRepository.findAllActiveByUserId(userPrincipal.getId()).stream()
+        List<Subscription> active = subscriptionRepository.findAllActiveByUserId(userPrincipal.getId());
+
+        List<SubscriptionResponse> responses = active.stream()
+                .filter(sub -> !isLandListing(sub.getPlanCategory()))
                 .map(this::toResponse)
-                .collect(java.util.stream.Collectors.toList());
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+
+        aggregatedLandCredits(userPrincipal.getId(), active).ifPresent(responses::add);
+        return responses;
+    }
+
+    /**
+     * One entry summarising every land package the user has bought.
+     *
+     * <p>Present whenever the user has ever bought credits — including after they have spent them
+     * all, so the UI can say "0 remaining, buy more" rather than showing nothing.
+     */
+    private Optional<SubscriptionResponse> aggregatedLandCredits(UUID userId, List<Subscription> activeSubscriptions) {
+        com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse balance =
+                listingCreditService.getBalance(userId);
+        if (balance.getCreditsPurchased() <= 0) {
+            return Optional.empty();
+        }
+
+        Subscription mostRecent = activeSubscriptions.stream()
+                .filter(sub -> isLandListing(sub.getPlanCategory()))
+                .findFirst()
+                .orElse(null);
+
+        return Optional.of(SubscriptionResponse.builder()
+                .id(mostRecent != null ? mostRecent.getId() : null)
+                .plan(mostRecent != null ? mostRecent.getPlan() : "LAND_CREDITS")
+                .type(LAND_LISTING)
+                .productType(LAND_LISTING)
+                .planId(mostRecent != null ? null : null)
+                .status(SubscriptionStatus.ACTIVE)
+                .startDate(mostRecent != null ? mostRecent.getStartDate() : null)
+                // No endDate, nextBillingDate, autoRenew or cancelAtPeriodEnd: credits are bought
+                // outright and never lapse.
+                .isActive(true)
+                .autoRenew(false)
+                .cancellable(false)
+                .billingModel(com.landgo.paymentservice.enums.BillingModel.ONE_TIME.name())
+                .billingCycle(BillingCycle.ONE_TIME.name())
+                .creditsPurchased(balance.getCreditsPurchased())
+                .creditsUsed(balance.getCreditsUsed())
+                .creditsAvailable(balance.getCreditsAvailable())
+                .creditsNeverExpire(true)
+                .maxListings(balance.getCreditsPurchased())
+                .slotsUsed(balance.getCreditsUsed())
+                .build());
     }
 
 
@@ -404,7 +525,21 @@ public class SubscriptionService {
         return matches.get(0);
     }
 
+    /**
+     * Land credits cannot be cancelled: they were bought outright and never renew. Cancelling one
+     * would be indistinguishable from confiscating paid-for credits.
+     */
+    private void rejectIfLandListing(Subscription subscription) {
+        if (isLandListing(subscription.getPlanCategory())) {
+            throw new BadRequestException(
+                    "Land listing credits are a one-time purchase and cannot be cancelled. "
+                            + "They never expire, and unused credits remain available.",
+                    "LAND_CREDITS_NOT_CANCELLABLE");
+        }
+    }
+
     private void cancelSingleSubscription(Subscription subscription, String reason) {
+        rejectIfLandListing(subscription);
         if (subscription.getStatus() == SubscriptionStatus.CANCELLED) {
             return;
         }
@@ -422,6 +557,13 @@ public class SubscriptionService {
         subscription.setAutoRenew(false);
         subscriptionRepository.save(subscription);
         log.info("Subscription {} cancelled locally", subscription.getId());
+
+        // A plan switch cancels the old plan as an intermediate step; that is not something the
+        // subscriber should be told about, and the switch itself sends its own mail.
+        if (!PLAN_SWITCH_REASON.equalsIgnoreCase(reason == null ? "" : reason.trim())) {
+            paymentEmailService.sendSubscriptionCancelled(subscription.getUserId(), subscription,
+                    "subscription.cancelled:" + subscription.getId());
+        }
     }
 
     @Transactional
@@ -445,6 +587,12 @@ public class SubscriptionService {
                 throw new BadRequestException("Invalid subscription ID format", "VALIDATION_ERROR");
             }
         } else if (targetPlanCategory != null && !targetPlanCategory.isBlank()) {
+            if (isLandListing(targetPlanCategory)) {
+                throw new BadRequestException(
+                        "Land listing credits are a one-time purchase and cannot be cancelled. "
+                                + "They never expire, and unused credits remain available.",
+                        "LAND_CREDITS_NOT_CANCELLABLE");
+            }
             List<Subscription> activeSubs = subscriptionRepository.findAllActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), targetPlanCategory.trim());
             if (!activeSubs.isEmpty()) {
                 for (Subscription sub : activeSubs) {
@@ -460,7 +608,13 @@ public class SubscriptionService {
                 throw new ResourceNotFoundException("No active subscription found to cancel in category: " + targetPlanCategory);
             }
         } else {
-            List<Subscription> activeSubs = subscriptionRepository.findAllActiveByUserId(userPrincipal.getId());
+            // An untargeted cancel means "cancel my recurring subscriptions". Land credit
+            // purchases are skipped rather than rejected, so a blanket cancel still works for a
+            // user who also happens to hold credits.
+            List<Subscription> activeSubs = subscriptionRepository.findAllActiveByUserId(userPrincipal.getId())
+                    .stream()
+                    .filter(sub -> !isLandListing(sub.getPlanCategory()))
+                    .toList();
             if (!activeSubs.isEmpty()) {
                 for (Subscription sub : activeSubs) {
                     cancelSingleSubscription(sub, reason);
@@ -474,6 +628,14 @@ public class SubscriptionService {
     @Transactional
     public SubscriptionResponse changePlan(UserPrincipal userPrincipal, ChangeSubscriptionRequest request) {
         String category = request.getPlanCategory();
+        if (isLandListing(category)) {
+            // There is nothing to switch: a land package is not an ongoing plan. Buying a
+            // different package simply adds its credits to the same balance.
+            throw new BadRequestException(
+                    "Land listing packages are one-time purchases. Buy the package you want; its "
+                            + "credits are added to your existing balance.",
+                    "LAND_CREDITS_NOT_SWITCHABLE");
+        }
         Subscription subscription = (category != null && !category.isBlank())
                 ? subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userPrincipal.getId(), category.trim())
                         .orElseThrow(() -> new ResourceNotFoundException("No active subscription found for category: " + category))
@@ -485,7 +647,8 @@ public class SubscriptionService {
  
         com.landgo.paymentservice.entity.SubscriptionPlanDetail detail = resolvePlanDetail(
                 request.getPlanId(), request.getPlan(), request.getPlanCategory());
- 
+
+        String previousPlan = subscription.getPlan();
         subscription.setPlan(detail.getPlanType());
         subscription.setAmount(request.getBillingCycle() == BillingCycle.ANNUAL
                 ? detail.getAnnualPrice()
@@ -515,6 +678,11 @@ public class SubscriptionService {
         Integer newMaxListings = getMaxListingsForPlan(detail.getPlanType());
         
         subscription = subscriptionRepository.save(subscription);
+
+        // Keyed on the subscription and the plan it landed on, so re-running a switch to the same
+        // plan mails once while a later switch to a different plan mails again.
+        paymentEmailService.sendPlanSwitched(userPrincipal.getId(), subscription, previousPlan,
+                "subscription.switched:" + subscription.getId() + ":" + subscription.getPlan());
         
         if ("land_listing".equalsIgnoreCase(category) && oldMaxListings != null && newMaxListings != null && newMaxListings < oldMaxListings) {
             try {
@@ -561,27 +729,15 @@ public class SubscriptionService {
                             .build();
                     paymentRepository.save(payment);
 
-                    try {
-                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
-                        if (userInfo != null) {
-                            String email = userInfo.get("email");
-                            String name = userInfo.get("fullName");
-                            
-                            java.util.Map<String, String> vars = new java.util.HashMap<>();
-                            vars.put("User", name);
-                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
-                            vars.put("amountPaid", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
-                            vars.put("txnId", paymentIntentId != null ? paymentIntentId : "N/A");
-                            vars.put("date", java.time.LocalDate.now().toString());
-                            vars.put("renewalDate", sub.getEndDate() != null ? sub.getEndDate().toLocalDate().toString() : java.time.LocalDate.now().plusDays(30).toString());
-                            vars.put("renewalAmount", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
-                            
-                            sendEmail(email, "LandGo - Payment Receipt", "PaymentSuccess", vars);
-                            sendEmail(email, "LandGo - Subscription Activated", "SubscriptionActivated", vars);
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to send subscription payment success emails", e);
-                    }
+                    // Keyed on the Stripe payment intent so a replayed invoice.paid webhook does
+                    // not re-send the receipt. Activation is keyed on the subscription, so a
+                    // renewal sends a receipt but not a second "activated" mail.
+                    String paymentKey = "stripe.invoice.paid:"
+                            + (paymentIntentId != null ? paymentIntentId : stripeSubscriptionId);
+                    paymentEmailService.sendSubscriptionReceipt(sub.getUserId(), sub, amount,
+                            currency, paymentIntentId, paymentKey);
+                    paymentEmailService.sendSubscriptionActivated(sub.getUserId(), sub, amount,
+                            currency, "subscription.activated:" + sub.getId());
                 }, () -> log.warn("Subscription not found for Stripe ID: {}", stripeSubscriptionId));
     }
 
@@ -611,22 +767,9 @@ public class SubscriptionService {
                             .build();
                     paymentRepository.save(payment);
 
-                    try {
-                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
-                        if (userInfo != null) {
-                            String email = userInfo.get("email");
-                            String name = userInfo.get("fullName");
-                            
-                            java.util.Map<String, String> vars = new java.util.HashMap<>();
-                            vars.put("User", name);
-                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
-                            vars.put("amountDue", "$" + amount.setScale(2, java.math.RoundingMode.HALF_UP).toString());
-                            
-                            sendEmail(email, "ACTION REQUIRED: LandGo Payment Failed", "PaymentRejected", vars);
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to send subscription payment failed email", e);
-                    }
+                    paymentEmailService.sendPaymentFailed(sub.getUserId(), sub, amount, currency,
+                            "stripe.invoice.failed:"
+                                    + (paymentIntentId != null ? paymentIntentId : stripeSubscriptionId));
                 });
     }
 
@@ -641,21 +784,8 @@ public class SubscriptionService {
                     subscriptionRepository.save(sub);
                     log.info("Subscription {} cancelled due to Stripe deletion (userId={})", sub.getId(), sub.getUserId());
 
-                    try {
-                        Map<String, String> userInfo = getUserInfo(sub.getUserId());
-                        if (userInfo != null) {
-                            String email = userInfo.get("email");
-                            String name = userInfo.get("fullName");
-                            
-                            java.util.Map<String, String> vars = new java.util.HashMap<>();
-                            vars.put("User", name);
-                            vars.put("planName", sub.getPlanCategory() != null ? sub.getPlanCategory() : "Professional Plan");
-                            
-                            sendEmail(email, "LandGo - Subscription Cancelled", "SubscriptionCanceled", vars);
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to send subscription cancelled email", e);
-                    }
+                    paymentEmailService.sendSubscriptionCancelled(sub.getUserId(), sub,
+                            "subscription.cancelled:" + sub.getId());
                 });
     }
 
@@ -669,6 +799,7 @@ public class SubscriptionService {
             throw new BadRequestException("Plan category (type) is required", "VALIDATION_ERROR");
         }
         plan.setPlanCategory(normalizedCategory);
+        validateBillingModel(plan);
 
         // Check if a plan with this plan_type/type already exists
         Optional<com.landgo.paymentservice.entity.SubscriptionPlanDetail> existingPlan = planDetailRepository
@@ -736,10 +867,58 @@ public class SubscriptionService {
         if (updated.getPopular() != null) {
             plan.setPopular(updated.getPopular());
         }
+        if (updated.getBillingModel() != null) {
+            plan.setBillingModel(updated.getBillingModel());
+        }
+        if (updated.getListingCredits() != null) {
+            plan.setListingCredits(updated.getListingCredits());
+        }
+        validateBillingModel(plan);
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail updated: {}", id);
         return saved;
+    }
+
+    /**
+     * Keeps the plan catalogue honest about which product line a plan belongs to.
+     *
+     * <p>A land package without a credit count is unsellable — checkout would take the money and
+     * grant nothing — so it is rejected at save time rather than at the first purchase.
+     */
+    private void validateBillingModel(com.landgo.paymentservice.entity.SubscriptionPlanDetail plan) {
+        boolean landCategory = isLandListing(plan.getPlanCategory());
+        if (plan.getBillingModel() == null) {
+            plan.setBillingModel(landCategory
+                    ? com.landgo.paymentservice.enums.BillingModel.ONE_TIME
+                    : com.landgo.paymentservice.enums.BillingModel.RECURRING);
+        }
+
+        boolean oneTime = plan.getBillingModel() == com.landgo.paymentservice.enums.BillingModel.ONE_TIME;
+        if (landCategory != oneTime) {
+            throw new BadRequestException(
+                    "Land listing plans must be ONE_TIME and market profession plans must be RECURRING",
+                    "VALIDATION_ERROR");
+        }
+
+        if (oneTime) {
+            if (plan.resolveListingCredits() <= 0) {
+                throw new BadRequestException(
+                        "listingCredits is required and must be at least 1 for a one-time land package",
+                        "VALIDATION_ERROR");
+            }
+            // Backfill the explicit column for a dashboard still sending only maxVendorViews.
+            plan.setListingCredits(plan.resolveListingCredits());
+            // A one-time package has a single price. Keeping both columns equal stops a
+            // monthly/annual toggle rendering for it by accident.
+            if (plan.getMonthlyPrice() != null) {
+                plan.setAnnualPrice(plan.getMonthlyPrice());
+            }
+        } else if (plan.getListingCredits() != null) {
+            throw new BadRequestException(
+                    "listingCredits applies only to one-time land listing packages",
+                    "VALIDATION_ERROR");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -781,6 +960,11 @@ public class SubscriptionService {
     public void processExpiredSubscriptions() {
         List<Subscription> expired = subscriptionRepository.findExpiredSubscriptions(LocalDateTime.now());
         for (Subscription sub : expired) {
+            // Land credit purchases have no term. Their end_date exists only because the column is
+            // NOT NULL, so expiring one would revoke credits the user paid for outright.
+            if (isLandListing(sub.getPlanCategory())) {
+                continue;
+            }
             sub.setStatus(SubscriptionStatus.EXPIRED);
             subscriptionRepository.save(sub);
             log.info("Subscription expired for user: {}", sub.getUserId());
@@ -802,14 +986,39 @@ public class SubscriptionService {
         return getUserPlanDetails(userId, "land_listing");
     }
 
+    /**
+     * Entitlement summary consumed by core-service before it lets a listing be posted.
+     *
+     * <p>For land listing this is the aggregated credit balance across every package the user has
+     * bought — not one subscription's allowance and not a plan-tier cap, both of which
+     * misreported a user who had bought two packages.
+     */
     @Transactional(readOnly = true)
     public Map<String, Object> getUserPlanDetails(UUID userId, String category) {
-        String targetCategory = (category == null || category.isBlank()) ? "land_listing" : category;
-        Optional<Subscription> activeSubOpt = subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, targetCategory);
+        String targetCategory = (category == null || category.isBlank()) ? LAND_LISTING : category;
         Map<String, Object> details = new HashMap<>();
+
+        if (isLandListing(targetCategory)) {
+            com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse balance =
+                    listingCreditService.getBalance(userId);
+            details.put("planType", balance.getCreditsPurchased() > 0 ? "LAND_CREDITS" : "NONE");
+            details.put("billingModel", com.landgo.paymentservice.enums.BillingModel.ONE_TIME.name());
+            details.put("creditsPurchased", balance.getCreditsPurchased());
+            details.put("creditsUsed", balance.getCreditsUsed());
+            details.put("creditsAvailable", balance.getCreditsAvailable());
+            details.put("creditsNeverExpire", true);
+            // Kept for clients still reading maxListings; it is the purchased total, not a cap
+            // that resets.
+            details.put("maxListings", balance.getCreditsPurchased());
+            return details;
+        }
+
+        Optional<Subscription> activeSubOpt =
+                subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, targetCategory);
         if (activeSubOpt.isPresent()) {
             Subscription sub = activeSubOpt.get();
             details.put("planType", sub.getPlan());
+            details.put("billingModel", com.landgo.paymentservice.enums.BillingModel.RECURRING.name());
             details.put("maxListings", getMaxListingsForPlan(sub.getPlan()));
         } else {
             details.put("planType", "NONE");
@@ -828,41 +1037,44 @@ public class SubscriptionService {
 
     private void enrichResponse(SubscriptionResponse response, Subscription subscription) {
         if (subscription == null || response == null) return;
-        response.setCancelAtPeriodEnd(!subscription.isAutoRenew());
-        
-        if (subscription.getPlan() != null && subscription.getPlanCategory() != null) {
-            String planCategory = subscription.getPlanCategory().trim().toLowerCase();
-            if ("land_listing".equals(planCategory)) {
-                response.setMaxListings(getMaxListingsForPlan(subscription.getPlan()));
-                
-                // Fetch slots used from core-service
-                try {
-                    String url = coreServiceUrl + "/internal/listings/user/" + subscription.getUserId() + "/slots-used";
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> coreResp = restTemplate.getForObject(url, Map.class);
-                    if (coreResp != null && coreResp.containsKey("slotsUsed")) {
-                        Object slots = coreResp.get("slotsUsed");
-                        if (slots instanceof Number) {
-                            response.setSlotsUsed(((Number) slots).intValue());
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("Failed to fetch slotsUsed from core-service for user {}: {}", subscription.getUserId(), e.getMessage());
-                    response.setSlotsUsed(0);
-                }
-            } else {
-                response.setMaxListings(null);
-                response.setSlotsUsed(null);
-            }
+        boolean landListing = isLandListing(subscription.getPlanCategory());
 
+        if (landListing) {
+            // Nothing about a one-time purchase renews, cancels or lapses, so every field that
+            // would imply otherwise is cleared rather than left with a placeholder date.
+            response.setBillingModel(com.landgo.paymentservice.enums.BillingModel.ONE_TIME.name());
+            response.setBillingCycle(BillingCycle.ONE_TIME.name());
+            response.setCancelAtPeriodEnd(null);
+            response.setCancellable(false);
+            response.setNextBillingDate(null);
+            response.setEndDate(null);
+            response.setAutoRenew(false);
+            response.setCreditsNeverExpire(true);
+
+            com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse balance =
+                    listingCreditService.getBalance(subscription.getUserId());
+            response.setCreditsPurchased(balance.getCreditsPurchased());
+            response.setCreditsUsed(balance.getCreditsUsed());
+            response.setCreditsAvailable(balance.getCreditsAvailable());
+            // maxListings/slotsUsed kept populated from the same aggregate for older clients.
+            response.setMaxListings(balance.getCreditsPurchased());
+            response.setSlotsUsed(balance.getCreditsUsed());
+        } else {
+            response.setBillingModel(com.landgo.paymentservice.enums.BillingModel.RECURRING.name());
+            response.setCancelAtPeriodEnd(!subscription.isAutoRenew());
+            response.setCancellable(true);
+            response.setNextBillingDate(subscription.isAutoRenew() ? subscription.getEndDate() : null);
+            response.setMaxListings(null);
+            response.setSlotsUsed(null);
+        }
+
+        if (subscription.getPlan() != null && subscription.getPlanCategory() != null) {
             planDetailRepository.findByPlanTypeAndPlanCategoryAndIsActiveTrue(subscription.getPlan(), subscription.getPlanCategory())
                 .ifPresent(detail -> {
                     response.setPlanId(detail.getId());
-                    if (subscription.getAmount() != null) {
+                    if (!landListing && subscription.getAmount() != null) {
                         if (subscription.getAmount().compareTo(detail.getAnnualPrice()) == 0) {
                             response.setBillingCycle("ANNUAL");
-                        } else if (subscription.getAmount().compareTo(detail.getMonthlyPrice()) == 0) {
-                            response.setBillingCycle("MONTHLY");
                         } else {
                             response.setBillingCycle("MONTHLY");
                         }

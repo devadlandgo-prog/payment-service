@@ -1,5 +1,6 @@
 package com.landgo.paymentservice.entity;
 
+import com.landgo.paymentservice.enums.BillingModel;
 import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
@@ -71,4 +72,36 @@ public class SubscriptionPlanDetail extends BaseEntity {
 
     @Column(name = "stripe_price_id", length = 100)
     private String stripePriceId;
+
+    /**
+     * How this plan is sold. {@code ONE_TIME} land packages grant {@link #listingCredits} and are
+     * buyable repeatedly; {@code RECURRING} market plans renew on a monthly or annual cycle.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "billing_model", nullable = false, length = 20)
+    @Builder.Default
+    private BillingModel billingModel = BillingModel.RECURRING;
+
+    /** Credits a single purchase of this package grants. Land packages only. */
+    @Column(name = "listing_credits")
+    private Integer listingCredits;
+
+    /** True for land-listing credit packages, whatever the category string happens to be cased as. */
+    public boolean isLandListing() {
+        return billingModel == BillingModel.ONE_TIME
+                || (planCategory != null && "land_listing".equalsIgnoreCase(planCategory.trim()));
+    }
+
+    /**
+     * Credits one purchase grants.
+     *
+     * <p>Falls back to {@code maxVendorViews} for packages seeded before {@code listing_credits}
+     * existed, where that column carried the credit count.
+     */
+    public int resolveListingCredits() {
+        if (listingCredits != null && listingCredits > 0) {
+            return listingCredits;
+        }
+        return maxVendorViews != null && maxVendorViews > 0 ? maxVendorViews : 0;
+    }
 }
