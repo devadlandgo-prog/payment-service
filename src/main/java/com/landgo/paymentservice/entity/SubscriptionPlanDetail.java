@@ -93,15 +93,15 @@ public class SubscriptionPlanDetail extends BaseEntity {
     }
 
     /**
-     * Credits one purchase grants.
+     * Credits one purchase of this package grants.
      *
-     * <p>Falls back to {@code maxVendorViews} for packages seeded before {@code listing_credits}
-     * existed, where that column carried the credit count.
+     * <p>{@code listing_credits} is the only source. This used to fall back to
+     * {@code maxVendorViews} for rows seeded before the column existed, which was wrong: on the
+     * legacy FREE/BASIC/PREMIUM tiers that column means vendor profile views per month, and the
+     * fallback silently turned "5 vendor views" into "5 listing credits" — advertising five free
+     * listings on a $0 plan. Every land plan now has the column populated explicitly.
      */
     public int resolveListingCredits() {
-        if (listingCredits != null && listingCredits > 0) {
-            return listingCredits;
-        }
-        return maxVendorViews != null && maxVendorViews > 0 ? maxVendorViews : 0;
+        return listingCredits != null && listingCredits > 0 ? listingCredits : 0;
     }
 }

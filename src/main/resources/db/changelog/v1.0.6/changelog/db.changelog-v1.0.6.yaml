@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-6-dml-correct-legacy-land-plan-credits
+      author: backend-team
+      changes:
+        - sqlFile:
+            path: ../dml/006_correct_legacy_land_plan_credits.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: payments-v1-0-6-dml-reverse-overgranted-migration-credits
+      author: backend-team
+      changes:
+        - sqlFile:
+            path: ../dml/007_reverse_overgranted_migration_credits.sql
+            relativeToChangelogFile: true
