@@ -30,6 +30,7 @@ import java.util.UUID;
 public class SubscriptionController {
 
     private final SubscriptionService subscriptionService;
+    private final com.landgo.paymentservice.service.ListingCreditService listingCreditService;
 
     // ── User subscription lifecycle ─────────────────────────────────────────
 
@@ -98,11 +99,35 @@ public class SubscriptionController {
         }
     }
 
+    /**
+     * Activates a land listing, spending one credit.
+     *
+     * <p>Keyed on the listing with the same key core-service uses when the listing is created, so
+     * posting and activating the same listing together cost exactly one credit no matter which
+     * path the client takes, and a retry costs nothing.
+     *
+     * <p>It previously checked only that the caller had *some* active subscription and consumed
+     * nothing. Under credits that check is meaningless — a land purchase row stays ACTIVE forever
+     * because credits never expire — so it returned success for a user with a zero balance.
+     */
     @PostMapping("/activate-land")
-    @Operation(summary = "Activate a land listing — requires an active subscription")
-    public ResponseEntity<ApiResponse<Void>> activateLand(@CurrentUser UserPrincipal userPrincipal, @RequestParam String landId) {
-        subscriptionService.validateActiveSubscription(userPrincipal);
-        return ResponseEntity.ok(ApiResponse.success("Land listing activated", null));
+    @Operation(summary = "Activate a land listing — spends one listing credit",
+            description = "Idempotent per listing. Returns 409 NO_LISTING_CREDITS when the balance "
+                    + "is exhausted; buy another package, credits never expire.")
+    public ResponseEntity<ApiResponse<com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse>>
+            activateLand(@CurrentUser UserPrincipal userPrincipal, @RequestParam String landId) {
+        UUID listingId;
+        try {
+            listingId = UUID.fromString(landId.trim());
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new com.landgo.paymentservice.exception.BadRequestException(
+                    "landId must be a valid UUID", "VALIDATION_ERROR");
+        }
+
+        com.landgo.paymentservice.dto.response.ListingCreditBalanceResponse balance =
+                listingCreditService.consumeCredit(userPrincipal.getId(), listingId,
+                        "listing.create:" + listingId);
+        return ResponseEntity.ok(ApiResponse.success("Land listing activated", balance));
     }
 
     // ── Plan catalogue CRUD (Admin) ─────────────────────────────────────────
