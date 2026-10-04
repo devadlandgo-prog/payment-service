@@ -148,7 +148,10 @@ public class SubscriptionController {
                 .planType(request.getPlanType())
                 .name(request.getName())
                 .description(request.getDescription())
-                .monthlyPrice(request.getMonthlyPrice())
+                // resolveOneTimePrice() falls back to the request's `price` field, so a
+                // one-time package can be created with the single price it actually has.
+                // SubscriptionService mirrors this into annualPrice for ONE_TIME plans.
+                .monthlyPrice(request.resolveOneTimePrice())
                 .annualPrice(request.getAnnualPrice())
                 .currency(request.getCurrency())
                 .features(request.getFeatures())
@@ -174,7 +177,10 @@ public class SubscriptionController {
         com.landgo.paymentservice.entity.SubscriptionPlanDetail updated = com.landgo.paymentservice.entity.SubscriptionPlanDetail.builder()
                 .name(request.getName())
                 .description(request.getDescription())
-                .monthlyPrice(request.getMonthlyPrice())
+                // resolveOneTimePrice() falls back to the request's `price` field, so a
+                // one-time package can be created with the single price it actually has.
+                // SubscriptionService mirrors this into annualPrice for ONE_TIME plans.
+                .monthlyPrice(request.resolveOneTimePrice())
                 .annualPrice(request.getAnnualPrice())
                 .currency(request.getCurrency())
                 .features(request.getFeatures())
