@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-7-dml-normalize-plan-category-case
+      author: backend-team
+      failOnError: true
+      preConditions:
+        # Both statements below assume no tier is already duplicated across spellings.
+        # If one is, lowercasing would violate the existing composite constraint and the
+        # unique index could not be built, so a service deploy would fail on startup for
+        # a data problem that needs a person to decide which row survives. Skip instead,
+        # and let the duplicate be found by the person who can resolve it.
+        - onFail: MARK_RAN
+          onFailMessage: >-
+            subscription_plan_details holds the same tier under more than one spelling of
+            plan_category; resolve the duplicate by hand, then re-run this changeset.
+          sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT count(*) FROM (
+                SELECT 1 FROM payments.subscription_plan_details
+                GROUP BY lower(plan_type), lower(plan_category)
+                HAVING count(*) > 1
+              ) duplicated_tiers
+      changes:
+        - sqlFile:
+            path: ../dml/008_normalize_plan_category_case.sql
+            relativeToChangelogFile: true

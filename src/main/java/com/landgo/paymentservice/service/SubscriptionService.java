@@ -73,9 +73,21 @@ public class SubscriptionService {
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category) {
+        return getSubscriptionPlans(category, false);
+    }
+
+    /**
+     * The plan catalogue, optionally including retired tiers.
+     *
+     * <p>Retired plans are hidden from buyers — they are not purchasable — but an administrator
+     * needs to see them, because a retired tier still claims its slot in the catalogue and
+     * recreating it revives that row rather than adding a new one. With them invisible, an empty
+     * catalogue that refuses to be filled has no explanation anywhere in the API.
+     */
+    public List<SubscriptionPlanResponse> getSubscriptionPlans(String category, boolean includeInactive) {
         String normalizedCategory = category == null ? null : category.trim().toLowerCase();
         return planDetailRepository.findAll().stream()
-                .filter(com.landgo.paymentservice.entity.SubscriptionPlanDetail::isActive)
+                .filter(detail -> includeInactive || detail.isActive())
                 .filter(detail -> normalizedCategory == null || normalizedCategory.isBlank()
                         || (detail.getPlanCategory() != null && detail.getPlanCategory().trim().equalsIgnoreCase(normalizedCategory)))
                 .map(detail -> SubscriptionPlanResponse.builder()
@@ -108,7 +120,7 @@ public class SubscriptionService {
                         .billingIntervals(detail.isLandListing()
                                 ? java.util.List.of()
                                 : java.util.List.of("MONTHLY", "ANNUAL"))
-                        .isActive(true)
+                        .isActive(detail.isActive())
                         .stripeProductId(detail.getStripeProductId())
                         .stripePriceId(detail.getStripePriceId())
                         .build())
@@ -806,6 +818,10 @@ public class SubscriptionService {
                 .findByPlanTypeAndPlanCategory(plan.getPlanType(), normalizedCategory);
 
         if (existingPlan.isPresent()) {
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail existing = existingPlan.get();
+            if (!existing.isActive()) {
+                return reviveRetiredPlan(existing, plan);
+            }
             throw new ConflictException(
                     "Plan tier " + plan.getPlanType() + " already exists for type " + normalizedCategory
                             + ". Use PUT /subscriptions/plans/{id} to update or choose another tier.",
@@ -814,6 +830,48 @@ public class SubscriptionService {
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
         log.info("Transaction COMMIT: Plan detail saved: {}", saved.getId());
+        return saved;
+    }
+
+    /**
+     * Brings a retired tier back with the values the caller just sent.
+     *
+     * <p>DELETE /subscriptions/plans/{id} retires a plan rather than removing the row, so that
+     * subscriptions and payments pointing at it keep resolving. The tier stays claimed by that
+     * hidden row, and recreating it used to be a dead end: GET /plans filters on active and showed
+     * nothing, while POST /plans saw the row and answered 409 — the catalogue looked empty and
+     * refused to be filled. The composite unique index means there is no second row to create
+     * either, so reviving the one that exists is the only outcome that can succeed.
+     *
+     * <p>Every field from the request is applied, so an admin recreating a tier gets the plan they
+     * asked for and not whatever it held before it was retired. The id is deliberately preserved:
+     * the rows referencing it are the reason the row was kept in the first place.
+     */
+    private com.landgo.paymentservice.entity.SubscriptionPlanDetail reviveRetiredPlan(
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail existing,
+            com.landgo.paymentservice.entity.SubscriptionPlanDetail requested) {
+        log.info("Reviving retired plan {} ({} / {})", existing.getId(), existing.getPlanType(),
+                existing.getPlanCategory());
+
+        existing.setName(requested.getName());
+        existing.setDescription(requested.getDescription());
+        existing.setMonthlyPrice(requested.getMonthlyPrice());
+        existing.setAnnualPrice(requested.getAnnualPrice());
+        existing.setCurrency(requested.getCurrency());
+        existing.setFeatures(requested.getFeatures());
+        existing.setPlanCategory(requested.getPlanCategory());
+        existing.setMaxVendorViews(requested.getMaxVendorViews());
+        existing.setMaxSavedLands(requested.getMaxSavedLands());
+        existing.setCanAccessPremium(requested.getCanAccessPremium());
+        existing.setCanContactVendor(requested.getCanContactVendor());
+        existing.setPopular(requested.getPopular());
+        existing.setBillingModel(requested.getBillingModel());
+        existing.setListingCredits(requested.getListingCredits());
+        existing.setActive(true);
+        validateBillingModel(existing);
+
+        com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(existing);
+        log.info("Transaction COMMIT: Retired plan revived: {}", saved.getId());
         return saved;
     }
 

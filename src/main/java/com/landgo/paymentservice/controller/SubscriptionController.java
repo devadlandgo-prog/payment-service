@@ -132,11 +132,22 @@ public class SubscriptionController {
 
     // ── Plan catalogue CRUD (Admin) ─────────────────────────────────────────
 
+    /**
+     * The plan catalogue.
+     *
+     * <p>{@code includeInactive} is admin-only: retired tiers are not purchasable, so a buyer must
+     * not see them, but an administrator has to — a retired tier still holds its slot, and without
+     * a way to list it a catalogue that looks empty and answers 409 on create is unexplainable.
+     */
     @GetMapping("/plans")
-    @Operation(summary = "Get available subscription plans. Optional ?type=market_profession|land_listing")
+    @Operation(summary = "Get available subscription plans. Optional ?type=market_profession|land_listing"
+            + ", and ?includeInactive=true for admins to also list retired tiers")
+    @PreAuthorize("!#includeInactive or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<SubscriptionPlanResponse>>> getPlans(
-            @RequestParam(required = false) String type) {
-        return ResponseEntity.ok(ApiResponse.success(subscriptionService.getSubscriptionPlans(type)));
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
+        return ResponseEntity.ok(ApiResponse.success(
+                subscriptionService.getSubscriptionPlans(type, includeInactive)));
     }
 
     @PostMapping("/plans")
