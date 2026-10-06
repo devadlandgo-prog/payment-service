@@ -83,7 +83,12 @@ public class SubscriptionService {
      * needs to see them, because a retired tier still claims its slot in the catalogue and
      * recreating it revives that row rather than adding a new one. With them invisible, an empty
      * catalogue that refuses to be filled has no explanation anywhere in the API.
+     *
+     * <p>Transactional because the mapping below walks each plan's lazily loaded features; this is
+     * the method the controller calls, so the annotation has to be here and not only on the
+     * one-argument overload.
      */
+    @Transactional(readOnly = true)
     public List<SubscriptionPlanResponse> getSubscriptionPlans(String category, boolean includeInactive) {
         String normalizedCategory = category == null ? null : category.trim().toLowerCase();
         return planDetailRepository.findAll().stream()
