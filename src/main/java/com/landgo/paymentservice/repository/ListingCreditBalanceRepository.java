@@ -17,6 +17,13 @@ import java.util.UUID;
  * the last credit. They are marked {@code clearAutomatically}/{@code flushAutomatically}
  * because a native update bypasses the persistence context — without that, reading the
  * balance back in the same transaction returns the pre-update entity.
+ *
+ * <p>Every table below is schema-qualified. {@code hibernate.default_schema} covers mapped
+ * entities only; native SQL is handed to the driver verbatim, and the connection's
+ * search_path does not include {@code payments}. Unqualified, these statements failed with
+ * {@code relation "listing_credit_balances" does not exist} — and because the caller treats
+ * a failed grant as non-fatal so the buyer is not left staring at an error, every land
+ * package purchase took the money, returned success, and granted nothing.
  */
 @Repository
 public interface ListingCreditBalanceRepository extends JpaRepository<ListingCreditBalance, UUID> {
@@ -30,7 +37,7 @@ public interface ListingCreditBalanceRepository extends JpaRepository<ListingCre
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            INSERT INTO listing_credit_balances (user_id, credits_purchased, credits_used, updated_at)
+            INSERT INTO payments.listing_credit_balances (user_id, credits_purchased, credits_used, updated_at)
             VALUES (:userId, :credits, 0, NOW())
             ON CONFLICT (user_id) DO UPDATE
                SET credits_purchased = listing_credit_balances.credits_purchased + :credits,
@@ -45,7 +52,7 @@ public interface ListingCreditBalanceRepository extends JpaRepository<ListingCre
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            UPDATE listing_credit_balances
+            UPDATE payments.listing_credit_balances
                SET credits_used = credits_used + 1,
                    updated_at = NOW()
              WHERE user_id = :userId
@@ -56,7 +63,7 @@ public interface ListingCreditBalanceRepository extends JpaRepository<ListingCre
     /** Returns a consumed credit — only used by an explicit, audited reversal. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            UPDATE listing_credit_balances
+            UPDATE payments.listing_credit_balances
                SET credits_used = GREATEST(0, credits_used - 1),
                    updated_at = NOW()
              WHERE user_id = :userId
@@ -71,7 +78,7 @@ public interface ListingCreditBalanceRepository extends JpaRepository<ListingCre
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            INSERT INTO listing_credit_balances (user_id, credits_purchased, credits_used, updated_at)
+            INSERT INTO payments.listing_credit_balances (user_id, credits_purchased, credits_used, updated_at)
             VALUES (:userId, GREATEST(0, :credits), 0, NOW())
             ON CONFLICT (user_id) DO UPDATE
                SET credits_purchased = GREATEST(

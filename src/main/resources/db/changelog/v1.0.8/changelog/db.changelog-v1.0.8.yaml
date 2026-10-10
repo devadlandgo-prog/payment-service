@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-8-ddl-allow-repeat-land-credit-purchases
+      author: backend-team
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/009_allow_repeat_land_credit_purchases.sql
+            relativeToChangelogFile: true
