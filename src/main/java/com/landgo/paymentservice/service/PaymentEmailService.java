@@ -227,11 +227,16 @@ public class PaymentEmailService {
     private void send(String toEmail, String subject, String templateName, Map<String, String> vars,
                       String idempotencyKey) {
         try {
-            String htmlBody = renderTemplate(templateName, vars);
+            // The template name and its variables, not rendered HTML. user-service owns every
+            // template and renders them; sending the finished HTML here meant a 6-9 KB request
+            // body, and this call goes out to https://user.<domain> and back in through the
+            // public ALB, where the WAF's SizeRestrictions_BODY rule rejects anything over 8 KB
+            // with a bare 403. Receipts, activations and failure notices were all being dropped
+            // there. A variables payload is around a kilobyte and cannot drift into that limit.
             Map<String, Object> payload = new HashMap<>();
             payload.put("toEmail", toEmail);
             payload.put("subject", subject);
-            payload.put("htmlBody", htmlBody);
+            payload.put("variables", vars);
             payload.put("templateName", templateName);
             payload.put("idempotencyKey", idempotencyKey);
             restTemplate.postForObject(userServiceUrl + "/internal/users/email/send", payload, Void.class);
@@ -242,26 +247,4 @@ public class PaymentEmailService {
         }
     }
 
-    private String renderTemplate(String templateName, Map<String, String> variables) throws java.io.IOException {
-        String templatePath = "email-templates/" + templateName + ".html";
-        org.springframework.core.io.ClassPathResource resource =
-                new org.springframework.core.io.ClassPathResource(templatePath);
-        if (!resource.exists()) {
-            throw new IllegalArgumentException("Template file not found: " + templatePath);
-        }
-        String template = new String(resource.getInputStream().readAllBytes(),
-                java.nio.charset.StandardCharsets.UTF_8);
-        template = template.replace("/static/icon.svg", logoUrl);
-        template = template.replace("{{logoUrl}}", logoUrl);
-
-        if (variables != null) {
-            for (Map.Entry<String, String> entry : variables.entrySet()) {
-                String value = entry.getValue() != null ? entry.getValue() : "";
-                template = template.replace("<!-- -->" + entry.getKey() + "<!-- -->", value);
-                template = template.replace("{{" + entry.getKey() + "}}", value);
-                template = template.replace("${" + entry.getKey() + "}", value);
-            }
-        }
-        return template;
-    }
 }
