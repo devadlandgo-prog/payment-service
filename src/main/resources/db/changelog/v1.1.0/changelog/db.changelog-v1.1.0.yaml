@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-1-0-dml-featured-plan-expertise-allowance
+      author: backend-team
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../dml/011_featured_plan_expertise_allowance.sql
+            relativeToChangelogFile: true
