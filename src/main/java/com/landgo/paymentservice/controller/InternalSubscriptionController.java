@@ -34,6 +34,18 @@ public class InternalSubscriptionController {
         return ResponseEntity.ok(Map.of("data", data));
     }
 
+    /**
+     * Expertise allowance for a user's active market profession subscription.
+     *
+     * <p>Returned unwrapped, unlike the plan endpoint above: this is read by user-service when it
+     * validates a professional registration, and an envelope there is one more thing for the caller
+     * to get wrong.
+     */
+    @GetMapping("/user/{userId}/expertise-limit")
+    public ResponseEntity<Map<String, Object>> getExpertiseLimit(@PathVariable UUID userId) {
+        return ResponseEntity.ok(subscriptionService.getExpertiseEntitlement(userId));
+    }
+
 
     @PostMapping("/user/{userId}/intent")
     public ResponseEntity<com.landgo.paymentservice.dto.response.SubscriptionIntentResponse> createSubscriptionIntent(

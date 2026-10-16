@@ -26,3 +26,6 @@ databaseChangeLog:
   - includeAll:
       path: db/changelog/v1.0.8/changelog
       relativeToChangelogFile: false
+  - includeAll:
+      path: db/changelog/v1.0.9/changelog
+      relativeToChangelogFile: false

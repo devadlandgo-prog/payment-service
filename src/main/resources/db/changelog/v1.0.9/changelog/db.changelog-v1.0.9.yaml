@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: payments-v1-0-9-ddl-expertise-selection-limits
+      author: backend-team
+      failOnError: true
+      changes:
+        - sqlFile:
+            path: ../ddl/010_expertise_selection_limits.sql
+            relativeToChangelogFile: true

@@ -39,4 +39,11 @@ public class SubscriptionPlanResponse {
      * must not render a monthly/annual toggle for it.
      */
     private java.util.List<String> billingIntervals;
+
+    /**
+     * Expertise categories a professional on this plan may select: a positive integer is the cap,
+     * {@code 0} allows none, and {@code null} is unlimited. Only meaningful for
+     * market_profession plans; a land package reports 0 because expertise is not its concept.
+     */
+    private Integer maxExpertiseSelections;
 }

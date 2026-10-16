@@ -52,5 +52,12 @@ public class SubscriptionResponse {
 
     /** False for land credits: there is no subscription to cancel. */
     private Boolean cancellable;
+
+    /**
+     * This subscriber's effective expertise allowance: a positive integer is the cap, {@code 0}
+     * allows none, {@code null} is unlimited. Resolved from the subscription's own override when it
+     * has one, otherwise from the plan's current configured cap.
+     */
+    private Integer maxExpertiseSelections;
 }
 

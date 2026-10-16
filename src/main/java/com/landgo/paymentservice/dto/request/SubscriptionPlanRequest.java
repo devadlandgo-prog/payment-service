@@ -75,6 +75,17 @@ public class SubscriptionPlanRequest {
     @jakarta.validation.constraints.Min(value = 1, message = "listingCredits must be at least 1")
     private Integer listingCredits;
 
+    /**
+     * Expertise categories a professional on this plan may select; {@code -1} for unlimited.
+     *
+     * Optional rather than required, so a dashboard that does not send it yet keeps working: when
+     * omitted on a market_profession plan the service derives the tier's existing allowance
+     * instead of falling back to the fail-closed column default of 0.
+     */
+    @jakarta.validation.constraints.Min(value = -1,
+            message = "maxExpertiseSelections must be -1 (unlimited), 0, or a positive count")
+    private Integer maxExpertiseSelections;
+
     /** The single price for a one-time package, whichever field the client used. */
     public BigDecimal resolveOneTimePrice() {
         return monthlyPrice != null ? monthlyPrice : price;

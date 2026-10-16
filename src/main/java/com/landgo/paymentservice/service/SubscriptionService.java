@@ -122,6 +122,7 @@ public class SubscriptionService {
                                 ? com.landgo.paymentservice.enums.BillingModel.ONE_TIME.name()
                                 : com.landgo.paymentservice.enums.BillingModel.RECURRING.name())
                         .listingCredits(detail.isLandListing() ? detail.resolveListingCredits() : null)
+                        .maxExpertiseSelections(detail.resolveMaxExpertiseSelections())
                         .billingIntervals(detail.isLandListing()
                                 ? java.util.List.of()
                                 : java.util.List.of("MONTHLY", "ANNUAL"))
@@ -484,6 +485,9 @@ public class SubscriptionService {
                 .creditsNeverExpire(true)
                 .maxListings(balance.getCreditsPurchased())
                 .slotsUsed(balance.getCreditsUsed())
+                // Explicit 0 rather than left null: on this contract null means unlimited, and a
+                // land package grants no expertise because expertise is not its concept.
+                .maxExpertiseSelections(0)
                 .build());
     }
 
@@ -872,6 +876,9 @@ public class SubscriptionService {
         existing.setPopular(requested.getPopular());
         existing.setBillingModel(requested.getBillingModel());
         existing.setListingCredits(requested.getListingCredits());
+        if (requested.getMaxExpertiseSelections() != null) {
+            existing.setMaxExpertiseSelections(requested.getMaxExpertiseSelections());
+        }
         existing.setActive(true);
         validateBillingModel(existing);
 
@@ -936,6 +943,9 @@ public class SubscriptionService {
         if (updated.getListingCredits() != null) {
             plan.setListingCredits(updated.getListingCredits());
         }
+        if (updated.getMaxExpertiseSelections() != null) {
+            plan.setMaxExpertiseSelections(updated.getMaxExpertiseSelections());
+        }
         validateBillingModel(plan);
 
         com.landgo.paymentservice.entity.SubscriptionPlanDetail saved = planDetailRepository.save(plan);
@@ -982,6 +992,31 @@ public class SubscriptionService {
                     "listingCredits applies only to one-time land listing packages",
                     "VALIDATION_ERROR");
         }
+
+        // Only reached with a null cap when the caller did not send one, because the column is NOT
+        // NULL: on an update the stored value is already in place. Deriving the tier's established
+        // allowance keeps a dashboard that predates the field creating correct plans, instead of
+        // writing the fail-closed 0 and blocking registration on a plan someone just created.
+        if (plan.getMaxExpertiseSelections() == null) {
+            plan.setMaxExpertiseSelections(landCategory ? 0 : defaultExpertiseSelectionsForTier(plan.getPlanType()));
+        }
+    }
+
+    /**
+     * The expertise allowance a market profession tier has had until now, which through August was
+     * hardcoded in the mobile client and is reproduced here so nothing moves when it stops being.
+     *
+     * <p>{@code -1} is unlimited. An unrecognised paid tier gets 2, which is the client's own
+     * fallback.
+     */
+    private int defaultExpertiseSelectionsForTier(String planType) {
+        if (planType == null) return 2;
+        return switch (planType.trim().toLowerCase()) {
+            case "enterprise", "unlimited" -> -1;
+            case "featured", "premium", "professional" -> 5;
+            case "free" -> 0;
+            default -> 2;
+        };
     }
 
     @Transactional(readOnly = true)
@@ -1098,9 +1133,68 @@ public class SubscriptionService {
         return response;
     }
 
+    /**
+     * The expertise allowance that actually applies to a subscriber: their own override when they
+     * have one, otherwise the plan's current configured cap.
+     *
+     * <p>Catalogue-by-default is what makes an admin's change to a tier reach existing subscribers
+     * without a release. The override exists for a grandfathered or negotiated allowance, and is the
+     * only thing that outranks the catalogue.
+     *
+     * @return raw allowance, {@code -1} for unlimited; {@code 0} when nothing grants any
+     */
+    private int rawEffectiveExpertiseSelections(Subscription subscription) {
+        if (subscription == null) return 0;
+        if (subscription.getMaxExpertiseSelections() != null) {
+            return subscription.getMaxExpertiseSelections();
+        }
+        if (subscription.getPlan() == null || subscription.getPlanCategory() == null) return 0;
+        return planDetailRepository
+                .findByPlanTypeIgnoreCaseAndPlanCategoryIgnoreCase(subscription.getPlan(), subscription.getPlanCategory())
+                .map(com.landgo.paymentservice.entity.SubscriptionPlanDetail::rawMaxExpertiseSelections)
+                .orElse(0);
+    }
+
+    /** API form of a raw allowance: {@code null} for unlimited. */
+    private Integer toApiExpertiseLimit(int raw) {
+        return raw < 0 ? null : raw;
+    }
+
+    /**
+     * Expertise entitlement for the caller's active market profession subscription, for
+     * user-service to enforce against at registration.
+     *
+     * <p>{@code active} false means no expertise may be selected at all regardless of the number
+     * alongside it — professional registration is gated on holding a live paid subscription, and an
+     * unlimited allowance on a lapsed plan must not reopen it.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getExpertiseEntitlement(UUID userId) {
+        Map<String, Object> details = new HashMap<>();
+        Optional<Subscription> activeSubOpt =
+                subscriptionRepository.findActiveByUserIdAndPlanCategoryIgnoreCase(userId, MARKET_PROFESSION);
+
+        if (activeSubOpt.isEmpty()) {
+            details.put("active", false);
+            details.put("unlimited", false);
+            details.put("maxExpertiseSelections", 0);
+            details.put("planType", "NONE");
+            return details;
+        }
+
+        Subscription sub = activeSubOpt.get();
+        int raw = rawEffectiveExpertiseSelections(sub);
+        details.put("active", true);
+        details.put("unlimited", raw < 0);
+        details.put("maxExpertiseSelections", toApiExpertiseLimit(raw));
+        details.put("planType", sub.getPlan());
+        return details;
+    }
+
     private void enrichResponse(SubscriptionResponse response, Subscription subscription) {
         if (subscription == null || response == null) return;
         boolean landListing = isLandListing(subscription.getPlanCategory());
+        response.setMaxExpertiseSelections(toApiExpertiseLimit(rawEffectiveExpertiseSelections(subscription)));
 
         if (landListing) {
             // Nothing about a one-time purchase renews, cancels or lapses, so every field that

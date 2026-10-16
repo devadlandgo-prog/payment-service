@@ -29,6 +29,14 @@ public class Subscription extends BaseEntity {
     @Column(name = "cancellation_reason", columnDefinition = "TEXT") private String cancellationReason;
     @Column(name = "stripe_subscription_id", length = 100) private String stripeSubscriptionId;
 
+    /**
+     * Expertise allowance for this subscriber specifically. NULL - the normal case - means follow
+     * the plan's configured cap, so an admin's change reaches existing subscribers. A value here is
+     * a grandfathered or account-specific allowance and wins over the catalogue. {@code -1} is
+     * unlimited.
+     */
+    @Column(name = "max_expertise_selections") private Integer maxExpertiseSelections;
+
     public boolean isActive() {
         return status == SubscriptionStatus.ACTIVE && endDate != null && endDate.isAfter(LocalDateTime.now());
     }

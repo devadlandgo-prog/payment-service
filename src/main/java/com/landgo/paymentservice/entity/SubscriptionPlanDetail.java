@@ -86,6 +86,31 @@ public class SubscriptionPlanDetail extends BaseEntity {
     @Column(name = "listing_credits")
     private Integer listingCredits;
 
+    /**
+     * Expertise categories a professional on this plan may select. {@code -1} is unlimited, as it
+     * is for {@link #maxVendorViews}; {@code 0} allows none.
+     *
+     * <p>Defaults to 0 rather than to a permissive value on purpose: a professional plan nobody
+     * has configured a cap for blocks selection, which an admin notices, instead of silently
+     * granting unlimited expertise.
+     */
+    @Column(name = "max_expertise_selections", nullable = false)
+    @Builder.Default
+    private Integer maxExpertiseSelections = 0;
+
+    /**
+     * The cap in the shape the API publishes it: {@code null} for unlimited, otherwise the exact
+     * allowance. The {@code -1} sentinel never leaves the service.
+     */
+    public Integer resolveMaxExpertiseSelections() {
+        return maxExpertiseSelections == null || maxExpertiseSelections < 0 ? null : maxExpertiseSelections;
+    }
+
+    /** Raw stored cap, {@code -1} for unlimited. Use for comparisons, not for responses. */
+    public int rawMaxExpertiseSelections() {
+        return maxExpertiseSelections == null ? 0 : maxExpertiseSelections;
+    }
+
     /** True for land-listing credit packages, whatever the category string happens to be cased as. */
     public boolean isLandListing() {
         return billingModel == BillingModel.ONE_TIME
